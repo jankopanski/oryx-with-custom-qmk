@@ -8,3 +8,9 @@
 
 #define RGB_MATRIX_STARTUP_SPD 60
 
+// Tapping term for tap-hold decisions (ms)
+#define TAPPING_TERM 200
+#define TAPPING_TERM_PER_KEY
+
+// Enable Chordal Hold for same-hand detection
+#define CHORDAL_HOLD
