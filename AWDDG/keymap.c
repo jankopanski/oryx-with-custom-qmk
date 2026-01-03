@@ -63,7 +63,9 @@ static inline bool is_thumb_layer_active(void) {
 }
 
 // Deferred execution tokens for each HRM key
-static deferred_token hrm_deferred_tokens[HRM_KEY_COUNT];
+// Note: 0 is used as "invalid" token since QMK tokens start from 1
+#define HRM_TOKEN_INVALID 0
+static deferred_token hrm_deferred_tokens[HRM_KEY_COUNT] = {0};
 
 // Keycode to base letter mapping
 static const uint16_t hrm_base_keycodes[HRM_KEY_COUNT] = {
@@ -183,7 +185,7 @@ static void hrm_handle_press(int8_t idx) {
   state->invalidated = false;
 
   // Cancel any existing deferred token for this key
-  if (hrm_deferred_tokens[idx] != DEFERRED_TOKEN_INVALID) {
+  if (hrm_deferred_tokens[idx] != HRM_TOKEN_INVALID) {
     cancel_deferred_exec(hrm_deferred_tokens[idx]);
   }
 
@@ -200,9 +202,9 @@ static void hrm_handle_release(int8_t idx) {
   hrm_state_t *state = &hrm_states[idx];
 
   // Cancel deferred callback if still pending
-  if (hrm_deferred_tokens[idx] != DEFERRED_TOKEN_INVALID) {
+  if (hrm_deferred_tokens[idx] != HRM_TOKEN_INVALID) {
     cancel_deferred_exec(hrm_deferred_tokens[idx]);
-    hrm_deferred_tokens[idx] = DEFERRED_TOKEN_INVALID;
+    hrm_deferred_tokens[idx] = HRM_TOKEN_INVALID;
   }
 
   if (state->invalidated) {
@@ -229,7 +231,6 @@ static void hrm_handle_release(int8_t idx) {
 
 // Check all pending HRM keys when thumb layer becomes active
 static void hrm_check_pending_keys_for_hold(void) {
-  uint16_t now = timer_read();
   for (int8_t i = 0; i < HRM_KEY_COUNT; i++) {
     hrm_state_t *state = &hrm_states[i];
     if (state->pressed && !state->decided && !state->invalidated) {
@@ -250,9 +251,9 @@ static void hrm_invalidate_pending_keys(void) {
       // Key is pressed but undecided - invalidate it
       state->invalidated = true;
       // Cancel any pending callback
-      if (hrm_deferred_tokens[i] != DEFERRED_TOKEN_INVALID) {
+      if (hrm_deferred_tokens[i] != HRM_TOKEN_INVALID) {
         cancel_deferred_exec(hrm_deferred_tokens[i]);
-        hrm_deferred_tokens[i] = DEFERRED_TOKEN_INVALID;
+        hrm_deferred_tokens[i] = HRM_TOKEN_INVALID;
       }
     }
   }
