@@ -18,11 +18,12 @@ enum custom_keycodes {
   HRM_SCLN, // Ctrl on hold
 };
 
+
 // Preserve existing dual-function keycodes
-#define DUAL_FUNC_0 LT(11, KC_R)
-#define DUAL_FUNC_1 LT(5, KC_F21)
-#define DUAL_FUNC_2 LT(11, KC_Q)
-#define DUAL_FUNC_3 LT(11, KC_F20)
+#define DUAL_FUNC_0 LT(8, KC_F16)
+#define DUAL_FUNC_1 LT(2, KC_F22)
+#define DUAL_FUNC_2 LT(2, KC_Z)
+#define DUAL_FUNC_3 LT(4, KC_P)
 
 // ============================================================================
 // Home-Row Mod State Tracking
