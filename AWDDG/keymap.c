@@ -366,11 +366,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
   // We check for both the layer-tap keys themselves and when we're on layers 1
   // or 2
   if (record->event.pressed) {
-    // Check if this is a thumb layer key press
-    // LT(1, KC_ENTER) is left thumb, LT(2, KC_SPACE) is right thumb
+    // Force activation on thumb key press to support Home-Row First with LT keys
+    if (keycode == LT(1, KC_ENTER) || keycode == LT(2, KC_SPACE)) {
+      hrm_activate_modifiers();
+    }
+
+    // Check if key is pressed while already on Layer 1 or 2
     uint8_t current_layer = get_highest_layer(layer_state);
     if (current_layer == 1 || current_layer == 2) {
-      // We just entered layer 1 or 2, activate any pending home-row modifiers
       hrm_activate_modifiers();
     }
   }
