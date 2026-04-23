@@ -101,7 +101,9 @@ Major additions:
    - [hrm_check_pending_keys_for_hold()](file:///Users/jkopanski/oryx-with-custom-qmk/AWDDG/keymap.c#230-244) - Transition pending keys when thumb pressed
    - [hrm_invalidate_pending_keys()](file:///Users/jkopanski/oryx-with-custom-qmk/AWDDG/keymap.c#245-260) - Cancel pending keys when thumb released
 4. **Chordal hold layout** for same-hand detection
-5. **Updated [process_record_user()](file:///Users/jkopanski/oryx-with-custom-qmk/AWDDG/keymap.c#461-573)** with HRM and thumb layer handling
+5. **Updated [process_record_user()](file:///Users/jkopanski/oryx-with-custom-qmk/AWDDG/keymap.c#342-448)**:
+   - Added forced activation of pending modifiers when thumb keys (`LT(1)` or `LT(2)`) are pressed to support Home-Row First.
+   - Maintained layer check to activate modifiers when keys are pressed while already on Layer 1/2.
 
 ## Modifier Mappings (macOS)
 
