@@ -54,6 +54,9 @@ hrm_key_state_t hrm_states[HRM_COUNT] = {
     {HRM_SCLN, KC_SCLN, KC_LCTL, 0, HRM_STATE_IDLE, INVALID_DEFERRED_TOKEN},
 };
 
+bool thumb_1_pressed = false;
+bool thumb_2_pressed = false;
+
 // Helper to find state by custom keycode
 hrm_key_state_t *hrm_get_state(uint16_t keycode) {
   for (int i = 0; i < HRM_COUNT; i++) {
@@ -151,8 +154,7 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg) {
 
   // Only fire if still in pending state
   if (state->state == HRM_STATE_PENDING) {
-    uint8_t current_layer = get_highest_layer(layer_state);
-    if (current_layer == 1 || current_layer == 2) {
+    if (thumb_1_pressed || thumb_2_pressed || get_highest_layer(layer_state) == 1 || get_highest_layer(layer_state) == 2) {
       // Activate modifier instead of auto-shifting
       if (state->modifier != 0) {
         register_code(state->modifier);
@@ -373,6 +375,14 @@ bool rgb_matrix_indicators_user(void) {
 }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+  // Track physical press state of thumb keys
+  if (keycode == LT(1, KC_ENTER)) {
+    thumb_1_pressed = record->event.pressed;
+  }
+  if (keycode == LT(2, KC_SPACE)) {
+    thumb_2_pressed = record->event.pressed;
+  }
+
   // ============================================================================
   // Home-Row Mod Processing
   // ============================================================================
