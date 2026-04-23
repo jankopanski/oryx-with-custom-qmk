@@ -367,8 +367,11 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
   // or 2
   if (record->event.pressed) {
     // Force activation on thumb key press to support Home-Row First with LT keys
-    if (keycode == LT(1, KC_ENTER) || keycode == LT(2, KC_SPACE)) {
-      hrm_activate_modifiers();
+    if (keycode >= QK_LAYER_TAP && keycode <= QK_LAYER_TAP_MAX) {
+      uint8_t layer = QK_LAYER_TAP_GET_LAYER(keycode);
+      if (layer == 1 || layer == 2) {
+        hrm_activate_modifiers();
+      }
     }
 
     // Check if key is pressed while already on Layer 1 or 2
