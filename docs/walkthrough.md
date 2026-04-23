@@ -3,7 +3,8 @@
 ## Summary
 
 Implemented a custom home-row mod system for the Moonlander keyboard where:
-- Home-row keys (A, S, D, F, J, K, L, ;) act as **regular letters on layer 0**
+- Home-row keys (A, S, D, F, J, K, L, ;) act as **letters on layer 0** (sent on release or auto-shifted on hold)
+- They participate in the state machine on Layer 0 to support **"Home-Row First"** modifier activation
 - When thumb layer keys are held (left → layer 1, right → layer 2), home-row keys become **dual-function** (letter on tap, modifier on hold)
 - Pressing home-row first, then adding thumb within tapping term (200ms) → activates modifier
 - Releasing thumb before home-row → no action (invalidated)

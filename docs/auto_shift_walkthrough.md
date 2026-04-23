@@ -68,8 +68,8 @@ Added logic to [process_record_user()](file:///Users/jkopanski/oryx-with-custom-
 
 ### 5. Keymap Updates
 
-#### Layer 0 - Unchanged
-Home-row keys remain plain letter keys (`KC_A`, `KC_S`, etc.)
+#### Layer 0 - Updated
+Home-row keys are now mapped to custom `HRM_*` keycodes to support the "Home-Row First" scenario. They still act as plain letter keys when tapped and auto-shift when held alone.
 
 #### Layer 1 ([keymap.c:88-89](file:///Users/jkopanski/oryx-with-custom-qmk/AWDDG/keymap.c#L88-L89))
 Replaced MT() keys with HRM_* on left home-row:
