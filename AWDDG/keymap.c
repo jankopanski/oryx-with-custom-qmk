@@ -36,6 +36,8 @@ typedef struct {
   uint32_t press_time;  // When key was pressed
   hrm_state_t state;    // Current state
   deferred_token token; // Deferred execution token for auto-shift timer
+  uint8_t row;          // Matrix row
+  uint8_t col;          // Matrix column
 } hrm_key_state_t;
 
 // State array for all home-row keys
@@ -56,6 +58,15 @@ hrm_key_state_t hrm_states[HRM_COUNT] = {
 hrm_key_state_t *hrm_get_state(uint16_t keycode) {
   for (int i = 0; i < HRM_COUNT; i++) {
     if (hrm_states[i].custom_keycode == keycode) {
+      return &hrm_states[i];
+    }
+  }
+  return NULL;
+}
+
+hrm_key_state_t *hrm_get_state_by_position(uint8_t row, uint8_t col) {
+  for (int i = 0; i < HRM_COUNT; i++) {
+    if (hrm_states[i].state != HRM_STATE_IDLE && hrm_states[i].row == row && hrm_states[i].col == col) {
       return &hrm_states[i];
     }
   }
@@ -162,9 +173,11 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg) {
 }
 
 // Handle home-row key press
-void hrm_handle_press(hrm_key_state_t *state) {
+void hrm_handle_press(hrm_key_state_t *state, uint8_t row, uint8_t col) {
   state->press_time = timer_read32();
   state->state = HRM_STATE_PENDING;
+  state->row = row;
+  state->col = col;
 
   // Schedule auto-shift callback
   state->token = defer_exec(AUTO_SHIFT_TIMEOUT, hrm_autoshift_callback, state);
@@ -383,15 +396,20 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     }
   }
 
-  // Handle custom home-row mod keycodes
-  hrm_key_state_t *hrm_state = hrm_get_state(keycode);
-  if (hrm_state != NULL) {
-    if (record->event.pressed) {
-      hrm_handle_press(hrm_state);
-    } else {
-      hrm_handle_release(hrm_state);
+  // Handle custom home-row mod keycodes on press
+  if (record->event.pressed) {
+    hrm_key_state_t *hrm_state = hrm_get_state(keycode);
+    if (hrm_state != NULL) {
+      hrm_handle_press(hrm_state, record->event.key.row, record->event.key.col);
+      return false; // Skip further processing for HRM keys
     }
-    return false; // Skip further processing for HRM keys
+  } else {
+    // Handle release by matrix position to prevent state leaks across layers
+    hrm_key_state_t *hrm_state = hrm_get_state_by_position(record->event.key.row, record->event.key.col);
+    if (hrm_state != NULL) {
+      hrm_handle_release(hrm_state);
+      return false; // Skip further processing for HRM keys
+    }
   }
 
   // ============================================================================
