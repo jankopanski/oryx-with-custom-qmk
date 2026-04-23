@@ -224,6 +224,14 @@ void hrm_activate_modifiers(void) {
   }
 }
 
+layer_state_t layer_state_set_user(layer_state_t state) {
+  uint8_t layer = get_highest_layer(state);
+  if (layer == 1 || layer == 2) {
+    hrm_activate_modifiers();
+  }
+  return state;
+}
+
 extern rgb_config_t rgb_matrix_config;
 
 RGB hsv_to_rgb_with_value(HSV hsv) {
