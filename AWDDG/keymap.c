@@ -232,25 +232,7 @@ layer_state_t layer_state_set_user(layer_state_t state) {
   return state;
 }
 
-bool get_auto_shift_key(uint16_t keycode) {
-    switch (keycode) {
-        case KC_UP:
-        case KC_DOWN:
-        case KC_LEFT:
-        case KC_RIGHT:
-        case HRM_A:
-        case HRM_S:
-        case HRM_D:
-        case HRM_F:
-        case HRM_J:
-        case HRM_K:
-        case HRM_L:
-        case HRM_SCLN:
-            return false;
-        default:
-            return true;
-    }
-}
+
 
 extern rgb_config_t rgb_matrix_config;
 
