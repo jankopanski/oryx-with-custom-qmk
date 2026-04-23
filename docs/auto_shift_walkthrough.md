@@ -35,8 +35,10 @@ IDLE → PENDING → TAP_FIRED (auto-shift at 180ms)
 
 #### [hrm_autoshift_callback()](file:///Users/jkopanski/oryx-with-custom-qmk/AWDDG/keymap.c#137-155)
 - Fires at 180ms (AUTO_SHIFT_TIMEOUT)
-- **Immediately outputs uppercase letter** while key still held
-- Transitions state to `TAP_FIRED`
+- **Checks current layer**:
+  - If on Layer 1 or 2 → Activates modifier immediately
+  - Otherwise → Outputs uppercase letter while key still held
+- Transitions state to `MODIFIER_ACTIVE` or `TAP_FIRED`
 
 #### [hrm_handle_press()](file:///Users/jkopanski/oryx-with-custom-qmk/AWDDG/keymap.c#156-164)
 - Initializes state to `PENDING`

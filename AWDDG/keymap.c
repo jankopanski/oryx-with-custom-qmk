@@ -140,13 +140,22 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg) {
 
   // Only fire if still in pending state
   if (state->state == HRM_STATE_PENDING) {
-    // Send shifted version of the key
-    register_code(KC_LSFT);
-    tap_code(state->letter_keycode);
-    unregister_code(KC_LSFT);
+    uint8_t current_layer = get_highest_layer(layer_state);
+    if (current_layer == 1 || current_layer == 2) {
+      // Activate modifier instead of auto-shifting
+      if (state->modifier != 0) {
+        register_code(state->modifier);
+        state->state = HRM_STATE_MODIFIER_ACTIVE;
+      }
+    } else {
+      // Send shifted version of the key
+      register_code(KC_LSFT);
+      tap_code(state->letter_keycode);
+      unregister_code(KC_LSFT);
 
-    // Transition to tap fired state
-    state->state = HRM_STATE_TAP_FIRED;
+      // Transition to tap fired state
+      state->state = HRM_STATE_TAP_FIRED;
+    }
     state->token = INVALID_DEFERRED_TOKEN;
   }
 
