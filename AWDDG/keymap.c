@@ -376,11 +376,13 @@ bool rgb_matrix_indicators_user(void) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
   // Track physical press state of thumb keys
-  if (keycode == LT(1, KC_ENTER)) {
-    thumb_1_pressed = record->event.pressed;
-  }
-  if (keycode == LT(2, KC_SPACE)) {
-    thumb_2_pressed = record->event.pressed;
+  if (keycode >= QK_LAYER_TAP && keycode <= QK_LAYER_TAP_MAX) {
+    uint8_t layer = QK_LAYER_TAP_GET_LAYER(keycode);
+    if (layer == 1) {
+      thumb_1_pressed = record->event.pressed;
+    } else if (layer == 2) {
+      thumb_2_pressed = record->event.pressed;
+    }
   }
 
   // ============================================================================
