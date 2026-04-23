@@ -148,10 +148,9 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg) {
         state->state = HRM_STATE_MODIFIER_ACTIVE;
       }
     } else {
-      // Send shifted version of the key
+      // Hold shifted version of the key to support repeat
       register_code(KC_LSFT);
-      tap_code(state->letter_keycode);
-      unregister_code(KC_LSFT);
+      register_code(state->letter_keycode);
 
       // Transition to tap fired state
       state->state = HRM_STATE_TAP_FIRED;
@@ -186,7 +185,9 @@ void hrm_handle_release(hrm_key_state_t *state) {
     break;
 
   case HRM_STATE_TAP_FIRED:
-    // Auto-shift already fired, nothing to do
+    // Unregister codes for auto-shift
+    unregister_code(state->letter_keycode);
+    unregister_code(KC_LSFT);
     break;
 
   case HRM_STATE_MODIFIER_ACTIVE:
