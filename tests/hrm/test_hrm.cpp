@@ -252,3 +252,111 @@ TEST_F(Hrm, fix_bug1_inverted_release_roll) {
     run_one_scan_loop();
     VERIFY_AND_CLEAR(driver);
 }
+
+// ============================================================================
+// Cross-Hand Shortcut Tests (Option A)
+// ============================================================================
+
+// Sequence:
+// 1. Right Thumb layer switch (LT(2, KC_SPACE) -> Layer 2)
+// 2. Right hand pinky modifier (HRM_SCLN -> Ctrl registered immediately)
+// 3. Right Thumb release (returns to Layer 0; Ctrl stays held under Option A)
+// 4. Left hand C letter (KC_C -> sends Ctrl+C)
+// 5. Left hand C release
+// 6. Right pinky release -> Ctrl unregisters cleanly, no ';' output!
+TEST_F(Hrm, cross_hand_shortcut_ctrl_c_option_a) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_r      = KeymapKey(0, 4, 1, LT(2, KC_SPACE));
+    auto hrm_scln     = KeymapKey(0, 1, 1, HRM_SCLN);
+    auto kc_c         = KeymapKey(0, 3, 0, KC_C);
+    auto layer_2_scln = KeymapKey(2, 1, 1, HRM_SCLN);
+    set_keymap({thumb_r, hrm_scln, kc_c, layer_2_scln});
+
+    // 1. Hold Right Thumb past tapping term to enter Layer 2
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Press Right Pinky (HRM_SCLN) -> activates Ctrl (KC_LEFT_CTRL) immediately!
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    hrm_scln.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 3. Release Right Thumb -> drops back to Layer 0
+    // Under Option A: Ctrl remains active as long as HRM_SCLN is held!
+    EXPECT_NO_REPORT(driver);
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 4. Press Left Hand C on Layer 0 -> host receives Ctrl + C!
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL, KC_C));
+    kc_c.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 5. Release Left Hand C -> host sees Ctrl still held
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    kc_c.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 6. Release Right Pinky (HRM_SCLN) -> Ctrl unregisters, no ';' emitted!
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_scln.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// Same cross-hand shortcut, but keeping Right Thumb held throughout
+TEST_F(Hrm, cross_hand_shortcut_thumb_held_throughout) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_r      = KeymapKey(0, 4, 1, LT(2, KC_SPACE));
+    auto hrm_scln     = KeymapKey(0, 1, 1, HRM_SCLN);
+    auto kc_c         = KeymapKey(0, 3, 0, KC_C);
+    auto layer_2_scln = KeymapKey(2, 1, 1, HRM_SCLN);
+    auto layer_2_c    = KeymapKey(2, 3, 0, KC_C);
+    set_keymap({thumb_r, hrm_scln, kc_c, layer_2_scln, layer_2_c});
+
+    // 1. Hold Right Thumb past tapping term to enter Layer 2
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Press Right Pinky (HRM_SCLN) -> activates Ctrl immediately
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    hrm_scln.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 3. Press Left Hand C while thumb is still held
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL, KC_C));
+    kc_c.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 4. Release Left Hand C
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    kc_c.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 5. Release Right Pinky -> Ctrl unregisters
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_scln.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 6. Release Right Thumb
+    EXPECT_NO_REPORT(driver);
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}

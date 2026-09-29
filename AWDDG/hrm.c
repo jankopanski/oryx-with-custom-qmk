@@ -64,6 +64,19 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg) {
 
 // Handle home-row key press
 void hrm_handle_press(hrm_key_state_t *state, uint8_t row, uint8_t col) {
+  // If thumb is already pressed or on layer 1/2 (Thumb-First mode):
+  // Activate modifier immediately without waiting 180ms!
+  if ((thumb_1_pressed || thumb_2_pressed ||
+       get_highest_layer(layer_state) == 1 ||
+       get_highest_layer(layer_state) == 2) && state->modifier != 0) {
+    register_code(state->modifier);
+    state->state = HRM_STATE_MODIFIER_ACTIVE;
+    state->row = row;
+    state->col = col;
+    state->press_time = timer_read32();
+    return;
+  }
+
   state->press_time = timer_read32();
   state->state = HRM_STATE_PENDING;
   state->row = row;
