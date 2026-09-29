@@ -165,3 +165,90 @@ TEST_F(Hrm, home_row_first_modifier_activation) {
     run_one_scan_loop();
     idle_for(TAPPING_TERM);
 }
+
+// ============================================================================
+// Bug 1 Fix Tests: Key Inversion & Rolling Order
+// ============================================================================
+
+// Fast roll "from" (HRM_F followed quickly by regular KC_R):
+// Must output 'f' then 'r' ("fr"), never "rf"
+TEST_F(Hrm, fix_bug1_fast_roll_key_inversion) {
+    TestDriver driver;
+    InSequence s;
+    auto hrm_f     = KeymapKey(0, 4, 0, HRM_F);
+    auto regular_r = KeymapKey(0, 5, 0, KC_R);
+    set_keymap({hrm_f, regular_r});
+
+    // Press HRM_F -> enters PENDING (no report)
+    EXPECT_NO_REPORT(driver);
+    hrm_f.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    idle_for(30);
+
+    // Press KC_R -> HRM_F is eagerly flushed as 'f', then 'r' is pressed!
+    EXPECT_REPORT(driver, (KC_F));
+    EXPECT_EMPTY_REPORT(driver);
+    EXPECT_REPORT(driver, (KC_R));
+    regular_r.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Release HRM_F at t=50ms -> was already tapped; release is ignored!
+    EXPECT_NO_REPORT(driver);
+    hrm_f.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Release KC_R -> sends empty report
+    EXPECT_EMPTY_REPORT(driver);
+    regular_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// Inverted release roll between two HRM keys:
+// Press HRM_S -> Press HRM_D -> Release HRM_D -> Release HRM_S:
+// Must output "sd" in press order, never "ds"!
+TEST_F(Hrm, fix_bug1_inverted_release_roll) {
+    TestDriver driver;
+    InSequence s;
+    auto hrm_s = KeymapKey(0, 2, 0, HRM_S);
+    auto hrm_d = KeymapKey(0, 3, 0, HRM_D);
+    set_keymap({hrm_s, hrm_d});
+
+    // Press HRM_S (t=0)
+    EXPECT_NO_REPORT(driver);
+    hrm_s.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    idle_for(20);
+
+    // Press HRM_D (t=20)
+    EXPECT_NO_REPORT(driver);
+    hrm_d.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    idle_for(20);
+
+    // Release HRM_D (t=40) before HRM_S!
+    // Release handler detects older pending key HRM_S and flushes 's' first, then 'd'!
+    EXPECT_REPORT(driver, (KC_S));
+    EXPECT_EMPTY_REPORT(driver);
+    EXPECT_REPORT(driver, (KC_D));
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_d.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    idle_for(20);
+
+    // Release HRM_S (t=60) -> already settled, no report
+    EXPECT_NO_REPORT(driver);
+    hrm_s.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}

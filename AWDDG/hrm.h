@@ -29,6 +29,7 @@ enum hrm_custom_keycodes {
 typedef enum {
     HRM_STATE_IDLE,           // Key not pressed
     HRM_STATE_PENDING,        // Pressed, waiting for decision
+    HRM_STATE_SETTLED_TAP,    // Flushed early due to roll/regular key press; release ignored
     HRM_STATE_TAP_FIRED,      // Auto-shift fired, letter sent
     HRM_STATE_MODIFIER_ACTIVE // Modifier mode active
 } hrm_state_t;
@@ -56,6 +57,7 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg);
 void hrm_handle_press(hrm_key_state_t *state, uint8_t row, uint8_t col);
 void hrm_handle_release(hrm_key_state_t *state);
 void hrm_activate_modifiers(void);
+void hrm_flush_pending_keys(void);
 
 // Central processing function to be called from process_record_user.
 // Returns false if the key event was consumed by the HRM state machine.

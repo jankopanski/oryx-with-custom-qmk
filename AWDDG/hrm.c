@@ -83,8 +83,26 @@ void hrm_handle_release(hrm_key_state_t *state) {
 
   switch (state->state) {
   case HRM_STATE_PENDING:
+    // Inverted release roll protection:
+    // If an older HRM key is still pending, flush it first!
+    for (int i = 0; i < HRM_COUNT; i++) {
+      if (&hrm_states[i] != state &&
+          hrm_states[i].state == HRM_STATE_PENDING &&
+          hrm_states[i].press_time < state->press_time) {
+        if (hrm_states[i].token != INVALID_DEFERRED_TOKEN) {
+          cancel_deferred_exec(hrm_states[i].token);
+          hrm_states[i].token = INVALID_DEFERRED_TOKEN;
+        }
+        tap_code(hrm_states[i].letter_keycode);
+        hrm_states[i].state = HRM_STATE_SETTLED_TAP;
+      }
+    }
     // Released before timeout - send lowercase letter
     tap_code(state->letter_keycode);
+    break;
+
+  case HRM_STATE_SETTLED_TAP:
+    // Already tapped earlier during roll/flush; nothing to do
     break;
 
   case HRM_STATE_TAP_FIRED:
@@ -127,6 +145,28 @@ void hrm_activate_modifiers(void) {
   }
 }
 
+// Flush all pending HRM keys in chronological order of press
+void hrm_flush_pending_keys(void) {
+  while (true) {
+    hrm_key_state_t *oldest = NULL;
+    for (int i = 0; i < HRM_COUNT; i++) {
+      if (hrm_states[i].state == HRM_STATE_PENDING) {
+        if (!oldest || hrm_states[i].press_time < oldest->press_time) {
+          oldest = &hrm_states[i];
+        }
+      }
+    }
+    if (!oldest) break;
+
+    if (oldest->token != INVALID_DEFERRED_TOKEN) {
+      cancel_deferred_exec(oldest->token);
+      oldest->token = INVALID_DEFERRED_TOKEN;
+    }
+    tap_code(oldest->letter_keycode);
+    oldest->state = HRM_STATE_SETTLED_TAP;
+  }
+}
+
 // Central processing logic for HRM
 bool hrm_process_record(uint16_t keycode, keyrecord_t *record) {
   // Track physical press state of thumb keys
@@ -162,6 +202,10 @@ bool hrm_process_record(uint16_t keycode, keyrecord_t *record) {
       hrm_handle_press(hrm_state, record->event.key.row, record->event.key.col);
       return false; // Skip further processing for HRM keys
     }
+
+    // A regular key (non-HRM, non-thumb) was pressed while on Layer 0:
+    // FIX FOR BUG 1: Eagerly flush all pending HRM keys in order of press before this key!
+    hrm_flush_pending_keys();
   } else {
     // Handle release by matrix position to prevent state leaks across layers
     hrm_key_state_t *hrm_state = hrm_get_state_by_position(record->event.key.row, record->event.key.col);
