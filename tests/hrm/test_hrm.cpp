@@ -63,7 +63,19 @@ class Hrm : public TestFixture {
 // Baseline Tests
 // ============================================================================
 
-// Quick tap on HRM key should send lowercase letter on release
+// ----------------------------------------------------------------------------
+// Test 1: Quick Tap Sends Lowercase Letter
+// ----------------------------------------------------------------------------
+// Scenario: Quick tap of an HRM key on Layer 0 during normal alpha typing.
+// Sequence:
+//   1. Press HRM_A (t=0ms) -> enters PENDING state, starts 180ms auto-shift timer.
+//   2. Wait 50ms (well under AUTO_SHIFT_TIMEOUT = 180ms).
+//   3. Release HRM_A (t=50ms).
+// Expected HID Reports:
+//   - On release: tap_code(KC_A) sends report [KC_A], followed by empty report.
+// Rationale:
+//   Validates baseline typing: quick taps must output lowercase letters with zero delay
+//   upon physical release, never modifiers or shifted letters.
 TEST_F(Hrm, quick_tap_sends_letter) {
     TestDriver driver;
     InSequence s;
@@ -89,7 +101,21 @@ TEST_F(Hrm, quick_tap_sends_letter) {
     VERIFY_AND_CLEAR(driver);
 }
 
-// Hold past AUTO_SHIFT_TIMEOUT on Layer 0 -> sends Shift+letter
+// ----------------------------------------------------------------------------
+// Test 2: Hold Past Timeout Sends Shifted Letter (Auto-Shift)
+// ----------------------------------------------------------------------------
+// Scenario: Holding an HRM key on Layer 0 past 180ms without any thumb key held.
+// Sequence:
+//   1. Press HRM_A (t=0ms) -> enters PENDING state.
+//   2. Wait 180ms (AUTO_SHIFT_TIMEOUT).
+//   3. Auto-shift callback fires: transitions to TAP_FIRED.
+//   4. Release HRM_A.
+// Expected HID Reports:
+//   - At t=180ms: registers KC_LSFT, then [KC_LSFT, KC_A].
+//   - On release: unregisters KC_A, then unregisters KC_LSFT (empty report).
+// Rationale:
+//   Validates Layer 0 auto-shift: holding a letter past 180ms produces uppercase 'A'
+//   and supports OS key repeat while held.
 TEST_F(Hrm, hold_past_timeout_sends_shifted_letter) {
     TestDriver driver;
     InSequence s;
@@ -116,7 +142,22 @@ TEST_F(Hrm, hold_past_timeout_sends_shifted_letter) {
     VERIFY_AND_CLEAR(driver);
 }
 
-// Home-Row First: Press HRM_D, press thumb, tap target key -> modifier resolves via PERMISSIVE_HOLD
+// ----------------------------------------------------------------------------
+// Test 3: Home-Row First Modifier Activation
+// ----------------------------------------------------------------------------
+// Scenario: "Home-Row First" chord — pressing HRM key first, then realizing a modifier
+//           is needed and pressing the thumb layer key before tapping the target key.
+// Sequence:
+//   1. Press HRM_D (t=0ms) -> enters PENDING state.
+//   2. Press Left Thumb (LT(1, KC_ENTER)) at t=50ms (< 180ms).
+//   3. Tap target key KC_C at t=80ms.
+// Expected HID Reports:
+//   - Tapping KC_C resolves thumb hold under PERMISSIVE_HOLD.
+//   - Host receives Cmd (KC_LEFT_GUI), then [Cmd, KC_C], then Cmd.
+//   - On release of HRM_D: empty report (Cmd releases cleanly, no letter output).
+// Rationale:
+//   Validates bidirectional chord timing: the user does not need to press the thumb
+//   strictly first; pressing HRM key first also activates the modifier cleanly.
 TEST_F(Hrm, home_row_first_modifier_activation) {
     TestDriver driver;
     InSequence s;
@@ -170,8 +211,24 @@ TEST_F(Hrm, home_row_first_modifier_activation) {
 // Bug 1 Fix Tests: Key Inversion & Rolling Order
 // ============================================================================
 
-// Fast roll "from" (HRM_F followed quickly by regular KC_R):
-// Must output 'f' then 'r' ("fr"), never "rf"
+// ----------------------------------------------------------------------------
+// Test 4: Bug 1 Fix — Fast Roll Key Inversion ("from")
+// ----------------------------------------------------------------------------
+// Scenario: Fast rolling an HRM key into a regular alpha key (e.g. typing "from").
+// Sequence:
+//   1. Press HRM_F (t=0ms) -> enters PENDING state.
+//   2. Press regular KC_R at t=30ms (before HRM_F timeout expires).
+//   3. Release HRM_F at t=50ms.
+//   4. Release KC_R at t=80ms.
+// Expected HID Reports:
+//   - On KC_R press: hrm_flush_pending_keys() eagerly flushes HRM_F as 'f' [KC_F],
+//     followed by empty report, then sends 'r' [KC_R].
+//   - On HRM_F release: ignored (already marked SETTLED_TAP).
+//   - On KC_R release: empty report.
+//   - Host output is strictly "fr", NEVER inverted to "rf"!
+// Rationale:
+//   Directly proves resolution of Bug 1: regular keys eagerly flush pending HRM keys
+//   in chronological order so fast typing never suffers out-of-order characters.
 TEST_F(Hrm, fix_bug1_fast_roll_key_inversion) {
     TestDriver driver;
     InSequence s;
@@ -208,9 +265,23 @@ TEST_F(Hrm, fix_bug1_fast_roll_key_inversion) {
     VERIFY_AND_CLEAR(driver);
 }
 
-// Inverted release roll between two HRM keys:
-// Press HRM_S -> Press HRM_D -> Release HRM_D -> Release HRM_S:
-// Must output "sd" in press order, never "ds"!
+// ----------------------------------------------------------------------------
+// Test 5: Bug 1 Fix — Inverted Release Roll Between Two HRM Keys
+// ----------------------------------------------------------------------------
+// Scenario: Rolling two HRM keys where keys are pressed in order (S, then D),
+//           but released in reverse order (D released before S).
+// Sequence:
+//   1. Press HRM_S at t=0ms -> PENDING.
+//   2. Press HRM_D at t=20ms -> PENDING.
+//   3. Release HRM_D at t=40ms (before HRM_S is released).
+//   4. Release HRM_S at t=60ms.
+// Expected HID Reports:
+//   - On HRM_D release: release handler detects older pending key HRM_S, flushes 's'
+//     first [KC_S], then sends 'd' [KC_D].
+//   - On HRM_S release: ignored (already marked SETTLED_TAP).
+//   - Host output is strictly "sd", NEVER inverted to "ds"!
+// Rationale:
+//   Validates chronological release protection across multiple pending HRM keys.
 TEST_F(Hrm, fix_bug1_inverted_release_roll) {
     TestDriver driver;
     InSequence s;
@@ -257,13 +328,25 @@ TEST_F(Hrm, fix_bug1_inverted_release_roll) {
 // Cross-Hand Shortcut Tests (Option A)
 // ============================================================================
 
+// ----------------------------------------------------------------------------
+// Test 6: Cross-Hand Shortcut Ctrl+C (Option A with Thumb Release)
+// ----------------------------------------------------------------------------
+// Scenario: User triggers Ctrl+C across hands, releasing the thumb key before tapping 'C'.
 // Sequence:
-// 1. Right Thumb layer switch (LT(2, KC_SPACE) -> Layer 2)
-// 2. Right hand pinky modifier (HRM_SCLN -> Ctrl registered immediately)
-// 3. Right Thumb release (returns to Layer 0; Ctrl stays held under Option A)
-// 4. Left hand C letter (KC_C -> sends Ctrl+C)
-// 5. Left hand C release
-// 6. Right pinky release -> Ctrl unregisters cleanly, no ';' output!
+//   1. Hold Right Thumb (LT(2, KC_SPACE)) past TAPPING_TERM (200ms) -> Layer 2 active.
+//   2. Press Right Pinky (HRM_SCLN) -> registers KC_LEFT_CTRL immediately (0ms lag).
+//   3. Release Right Thumb -> keyboard returns to Layer 0. Under Option A, Ctrl stays held!
+//   4. Press Left Hand KC_C on Layer 0 -> host receives Ctrl + C.
+//   5. Release Left Hand KC_C -> host sees Ctrl still held.
+//   6. Release Right Pinky -> Ctrl unregisters cleanly; NO semicolon (';') emitted!
+// Expected HID Reports:
+//   - On pinky press: [KC_LEFT_CTRL].
+//   - On C press: [KC_LEFT_CTRL, KC_C].
+//   - On C release: [KC_LEFT_CTRL].
+//   - On pinky release: empty report.
+// Rationale:
+//   Validates the user's primary cross-hand shortcut workflow (Option A) across layer
+//   transitions, ensuring zero modifier dropout and zero trailing character leaks.
 TEST_F(Hrm, cross_hand_shortcut_ctrl_c_option_a) {
     TestDriver driver;
     InSequence s;
@@ -312,7 +395,21 @@ TEST_F(Hrm, cross_hand_shortcut_ctrl_c_option_a) {
     VERIFY_AND_CLEAR(driver);
 }
 
-// Same cross-hand shortcut, but keeping Right Thumb held throughout
+// ----------------------------------------------------------------------------
+// Test 7: Cross-Hand Shortcut with Thumb Held Throughout
+// ----------------------------------------------------------------------------
+// Scenario: Cross-hand shortcut (Ctrl+C) where user keeps Right Thumb held throughout.
+// Sequence:
+//   1. Hold Right Thumb (LT(2, KC_SPACE)) past TAPPING_TERM (200ms) -> Layer 2 active.
+//   2. Press Right Pinky (HRM_SCLN) -> activates KC_LEFT_CTRL immediately.
+//   3. Press Left Hand KC_C while thumb is still held -> sends Ctrl + C.
+//   4. Release Left Hand KC_C.
+//   5. Release Right Pinky -> Ctrl unregisters cleanly.
+//   6. Release Right Thumb.
+// Expected HID Reports:
+//   - Same as Test 6, confirming seamless operation when thumb is not released early.
+// Rationale:
+//   Ensures thumb release is purely optional; holding thumb throughout behaves identically.
 TEST_F(Hrm, cross_hand_shortcut_thumb_held_throughout) {
     TestDriver driver;
     InSequence s;
@@ -365,8 +462,25 @@ TEST_F(Hrm, cross_hand_shortcut_thumb_held_throughout) {
 // Remaining Edge Case Tests
 // ============================================================================
 
-// Bug 4: Holding key past auto-shift timeout registers Shift+key.
-// Subsequent thumb press while key is still held should NOT turn it into a modifier!
+// ----------------------------------------------------------------------------
+// Test 8: Bug 4 — 180ms Auto-Shift Lockout Prevents Modifier Activation
+// ----------------------------------------------------------------------------
+// Scenario: Key held past 180ms auto-shifts to uppercase; subsequent thumb press
+//           must NOT turn that key into a modifier.
+// Sequence:
+//   1. Press HRM_A (t=0ms) on Layer 0 -> enters PENDING.
+//   2. Hold past 180ms -> auto-shift callback fires Shift+A (state TAP_FIRED).
+//   3. Press thumb key (LT(1, KC_ENTER)) and hold past 200ms.
+//      Because HRM_A is in TAP_FIRED state, hrm_activate_modifiers() ignores it.
+//   4. Release HRM_A -> unregisters A, then unregisters Shift.
+//   5. Release thumb key.
+// Expected HID Reports:
+//   - At t=180ms: [KC_LEFT_SHIFT], [KC_LEFT_SHIFT, KC_A].
+//   - On thumb press: NO report (Ctrl must NOT activate).
+//   - On HRM_A release: unregisters A, then Shift (empty report).
+// Rationale:
+//   Proves boundary condition of auto-shift: once a key has auto-shifted to uppercase,
+//   it cannot be retroactively repurposed into a modifier chord.
 TEST_F(Hrm, bug4_autoshift_prevents_modifier) {
     TestDriver driver;
     InSequence s;
@@ -408,7 +522,28 @@ TEST_F(Hrm, bug4_autoshift_prevents_modifier) {
     VERIFY_AND_CLEAR(driver);
 }
 
-// Multi-HRM modifier chords: e.g. Left Thumb + HRM_D (Cmd) + HRM_F (Shift) + C -> Cmd+Shift+C
+// ----------------------------------------------------------------------------
+// Test 9: Multi-HRM Modifier Chording (Cmd + Shift + C)
+// ----------------------------------------------------------------------------
+// Scenario: Pressing two HRM keys simultaneously during a thumb hold to create a
+//           multi-modifier chord (e.g. Cmd + Shift + C).
+// Sequence:
+//   1. Hold Left Thumb (LT(1, KC_ENTER)) -> Layer 1 active.
+//   2. Press HRM_D (Cmd) -> registers KC_LEFT_GUI immediately.
+//   3. Press HRM_F (Shift) -> registers KC_LEFT_SHIFT immediately alongside Cmd.
+//   4. Tap KC_C -> sends Cmd + Shift + C.
+//   5. Release HRM_F -> Shift unregisters, Cmd remains held.
+//   6. Release HRM_D -> Cmd unregisters (empty report).
+//   7. Release thumb.
+// Expected HID Reports:
+//   - Step 2: [KC_LEFT_GUI]
+//   - Step 3: [KC_LEFT_GUI, KC_LEFT_SHIFT]
+//   - Step 4: [KC_LEFT_GUI, KC_LEFT_SHIFT, KC_C], then [KC_LEFT_GUI, KC_LEFT_SHIFT]
+//   - Step 5: [KC_LEFT_GUI]
+//   - Step 6: empty report
+// Rationale:
+//   Validates that the HRM engine supports arbitrary multi-modifier chording without
+//   interference between home-row keys.
 TEST_F(Hrm, modifier_chord_two_hrm_keys) {
     TestDriver driver;
     InSequence s;
@@ -470,9 +605,25 @@ TEST_F(Hrm, modifier_chord_two_hrm_keys) {
     VERIFY_AND_CLEAR(driver);
 }
 
-// HRM_H has no modifier assigned (state->modifier == 0).
-// When pressed during thumb hold and held past AUTO_SHIFT_TIMEOUT,
-// it should fallback to auto-shift (Shift+H) rather than entering a stuck state.
+// ----------------------------------------------------------------------------
+// Test 10: Bug 6 Fix — HRM_H With Thumb Fallback to Auto-Shift (No Stuck State)
+// ----------------------------------------------------------------------------
+// Scenario: HRM_H has no assigned modifier (modifier == 0). When pressed during a thumb
+//           hold and held past 180ms, it should cleanly fall back to auto-shift (Shift+H)
+//           instead of becoming stuck in PENDING state.
+// Sequence:
+//   1. Hold Left Thumb (LT(1, KC_ENTER)) -> Layer 1 active.
+//   2. Press HRM_H -> modifier is 0, so enters PENDING with 180ms timer.
+//   3. Hold past 180ms -> auto-shift callback fires: sends Shift + H (TAP_FIRED).
+//   4. Release HRM_H -> unregisters H and Shift (empty report).
+//   5. Release thumb.
+//   6. Verify state machine: hrm_states[HRM_H].state == HRM_STATE_IDLE.
+// Expected HID Reports:
+//   - At t=180ms: [KC_LEFT_SHIFT], [KC_LEFT_SHIFT, KC_H].
+//   - On release: empty report.
+// Rationale:
+//   Guarantees that keys without modifiers (HRM_H) never lock up or get trapped in an
+//   unreachable state during thumb layer activation.
 TEST_F(Hrm, hrm_h_with_thumb_no_stuck_state) {
     TestDriver driver;
     InSequence s;
@@ -519,9 +670,25 @@ TEST_F(Hrm, hrm_h_with_thumb_no_stuck_state) {
     EXPECT_EQ(state->state, HRM_STATE_IDLE);
 }
 
-// Cross-layer release:
-// Press HRM_A on Layer 0, switch to Layer 1 (where matrix position has different keycode KC_1),
-// and release the key. hrm_get_state_by_position must find and release the modifier cleanly.
+// ----------------------------------------------------------------------------
+// Test 11: Cross-Layer Release by Matrix Position
+// ----------------------------------------------------------------------------
+// Scenario: HRM key pressed on Layer 0, thumb switches layer where the same matrix
+//           key position maps to a different keycode (e.g. KC_1). When physically released,
+//           hrm_get_state_by_position() must locate and release the modifier cleanly.
+// Sequence:
+//   1. Press HRM_A (col 1, row 0) on Layer 0 -> enters PENDING.
+//   2. Press thumb key (LT(1, KC_ENTER)) -> switches to Layer 1.
+//   3. Tap KC_C to resolve thumb hold -> Ctrl activates, C sent, C released.
+//   4. Release matrix key (col 1, row 0) while on Layer 1 (where matrix is mapped to KC_1).
+//   5. Release thumb key.
+//   6. Verify HRM_A state returned to HRM_STATE_IDLE.
+// Expected HID Reports:
+//   - Step 3: [KC_LEFT_CTRL], [KC_LEFT_CTRL, KC_C], [KC_LEFT_CTRL]
+//   - Step 4: empty report (Ctrl unregisters cleanly, KC_1 is NOT emitted).
+// Rationale:
+//   Validates physical matrix position tracking (row, col) across layer changes,
+//   preventing stuck modifiers caused by keycode divergence across layers.
 TEST_F(Hrm, release_by_position_cross_layer) {
     TestDriver driver;
     InSequence s;
@@ -572,4 +739,5 @@ TEST_F(Hrm, release_by_position_cross_layer) {
     EXPECT_NE(state, nullptr);
     EXPECT_EQ(state->state, HRM_STATE_IDLE);
 }
+
 
