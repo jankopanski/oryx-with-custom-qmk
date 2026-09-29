@@ -43,43 +43,85 @@ If two HRM keys are pressed in sequence (`HRM_S` at t=0, `HRM_D` at t=30), but r
 
 ---
 
-## 4-Commit Staged Execution Plan
+## Staged Execution & Git Commit History
 
-### Commit 1: Refactor — Extract HRM Logic into Standalone Module
-- **Purpose**: Pure modularization with zero behavioral changes.
-- **Files Modified / Created**:
-  - `AWDDG/hrm.h` [NEW]
-  - `AWDDG/hrm.c` [NEW]
-  - `AWDDG/keymap.c` [MODIFIED]
-- **Verification**:
-  - Sync to `~/Moonlander/qmk_firmware/keyboards/zsa/moonlander/keymaps/AWDDG/`.
-  - Compile firmware: `make zsa/moonlander/reva:AWDDG`. Verify compilation succeeds without warnings.
+The implementation and verification was executed across atomic git commits in `~/Moonlander/oryx-with-custom-qmk/`:
 
-### Commit 2: Test Infrastructure — Add QMK Unit Test Harness & Baseline Tests
-- **Purpose**: Set up deterministic in-memory testing using QMK Google Test framework.
-- **Files Modified / Created**:
-  - `tests/hrm/test.mk` [NEW]
-  - `tests/hrm/config.h` [NEW]
-  - `tests/hrm/test_hrm.cpp` [NEW] (Baseline tests: quick tap, 180ms auto-shift, home-row-first modifier activation)
-  - `test.sh` [NEW] (Executable runner script)
-- **Verification**:
-  - Run `./test.sh`. All baseline tests pass.
+### Commit 1 (`9e4c5b6`): Refactor — Extract HRM Logic into Standalone Module
+- **Files**: `AWDDG/hrm.h`, `AWDDG/hrm.c`, `AWDDG/keymap.c`, `AWDDG/rules.mk`.
+- **Changes**: Pure modularization. Extracted state machine, types, and callbacks from `keymap.c` into `hrm.h`/`hrm.c`.
+- **Verification**: Firmware builds cleanly (`make zsa/moonlander/reva:AWDDG`).
 
-### Commit 3: Fix Bug 1 — Key Inversion & Rolling Order
-- **Purpose**: Eagerly flush pending HRM keys upon regular keypress; preserve press order on inverted roll releases.
-- **Files Modified**:
-  - `AWDDG/hrm.c` [MODIFIED]: Add `hrm_flush_pending_keys()` and call it on regular keypress. Add chronological order check in `hrm_handle_release()`.
-  - `tests/hrm/test_hrm.cpp` [MODIFIED]: Add `fix_bug1_fast_roll_key_inversion` ("fr") and `fix_bug1_inverted_release_roll` ("sd").
-- **Verification**:
-  - Run `./test.sh`. Both rolling tests pass along with baseline tests.
+### Commit 2 (`1104030`): Test Infrastructure — Add QMK Unit Test Harness & Baseline Tests
+- **Files**: `tests/hrm/test.mk`, `tests/hrm/config.h`, `tests/hrm/test_hrm.cpp`, `test.sh`.
+- **Changes**: Built Google Test harness hooking into `deferred_exec_task()`, `layer_state_set_user()`, and `process_record_user()`.
+- **Tests Added**:
+  1. `quick_tap_sends_letter`: Tap < 180ms sends lowercase letter.
+  2. `hold_past_timeout_sends_shifted_letter`: Hold > 180ms sends Shift+letter.
+  3. `home_row_first_modifier_activation`: HRM -> Thumb -> Target key resolves modifier.
 
-### Commit 4: Cross-Hand Shortcuts — Option A Tests & Verification
-- **Purpose**: Validate cross-hand shortcuts across layer switches and thumb releases.
-- **Files Modified**:
-  - `tests/hrm/test_hrm.cpp` [MODIFIED]: Add `cross_hand_shortcut_ctrl_c_option_a` and `cross_hand_shortcut_thumb_held_throughout`.
-- **Verification**:
-  - Run `./test.sh`. Entire test suite passes.
-  - Compile final Moonlander firmware: `make zsa/moonlander/reva:AWDDG`.
+### Commit 3 (`c52b115`): Fix Bug 1 — Key Inversion & Rolling Order
+- **Files**: `AWDDG/hrm.c`, `tests/hrm/test_hrm.cpp`.
+- **Changes**:
+  - Implemented `hrm_flush_pending_keys()` called eagerly on regular keypress.
+  - Implemented chronological release ordering in `hrm_handle_release()`.
+- **Tests Added**:
+  4. `fix_bug1_fast_roll_key_inversion`: Fast rolling `HRM_F` + `KC_R` asserts "fr", never "rf".
+  5. `fix_bug1_inverted_release_roll`: Roll `S` $\rightarrow$ `D` with release `D` $\rightarrow$ `S` asserts "sd".
+
+### Commit 4 (`93b5c3c`): Cross-Hand Shortcuts & Option A
+- **Files**: `AWDDG/hrm.c`, `tests/hrm/test_hrm.cpp`.
+- **Changes**:
+  - Immediate modifier activation in `hrm_handle_press()` when thumb is held or on Layer 1/2.
+  - Supported Option A: modifier persists until HRM key release, even after thumb release.
+- **Tests Added**:
+  6. `cross_hand_shortcut_ctrl_c_option_a`: Right Thumb $\rightarrow$ Right Pinky Ctrl $\rightarrow$ Thumb release $\rightarrow$ Left C $\rightarrow$ sends `Ctrl+C`.
+  7. `cross_hand_shortcut_thumb_held_throughout`: Cross-hand shortcut with thumb held throughout.
+
+### Commit 5 (`d5312c0`): Bug 6 Fix & Edge-Case Test Suite
+- **Files**: `AWDDG/hrm.c`, `tests/hrm/test_hrm.cpp`.
+- **Changes**:
+  - Resolved `HRM_H` stuck state: if `state->modifier == 0`, fallback to auto-shift (`Shift + H`, `HRM_STATE_TAP_FIRED`) instead of staying stuck in pending.
+- **Tests Added**:
+  8. `bug4_autoshift_prevents_modifier`: 180ms auto-shift locks out subsequent thumb modifier transition.
+  9. `modifier_chord_two_hrm_keys`: Multi-HRM keys held simultaneously produce combined modifier chords (Cmd + Shift).
+  10. `hrm_h_with_thumb_no_stuck_state`: `HRM_H` held with thumb auto-shifts and returns to `IDLE`.
+  11. `release_by_position_cross_layer`: Releasing HRM key after layer change uses matrix position to unregister cleanly.
+
+---
+
+## Complete Test Suite (11 Tests)
+
+| # | Test Name | Category | Invariant Verified | Result |
+|---|:---|:---|:---|:---:|
+| 1 | `quick_tap_sends_letter` | Baseline | Tap < 180ms outputs lowercase letter on release | **PASSED** (0 ms) |
+| 2 | `hold_past_timeout_sends_shifted_letter` | Baseline | Hold > 180ms outputs Shift+uppercase letter | **PASSED** (0 ms) |
+| 3 | `home_row_first_modifier_activation` | Baseline | Home-Row First activates modifier via `PERMISSIVE_HOLD` | **PASSED** (0 ms) |
+| 4 | `fix_bug1_fast_roll_key_inversion` | Bug 1 Fix | Fast roll ("from") eagerly flushes pending key as "fr" | **PASSED** (0 ms) |
+| 5 | `fix_bug1_inverted_release_roll` | Bug 1 Fix | Out-of-order release preserves chronological press order | **PASSED** (0 ms) |
+| 6 | `cross_hand_shortcut_ctrl_c_option_a` | Option A | Modifier persists after thumb release; emits Ctrl+C cleanly | **PASSED** (0 ms) |
+| 7 | `cross_hand_shortcut_thumb_held_throughout` | Option A | Modifier persists with thumb held throughout | **PASSED** (0 ms) |
+| 8 | `bug4_autoshift_prevents_modifier` | Edge Case | Auto-shifted key cannot be transitioned to modifier by thumb | **PASSED** (0 ms) |
+| 9 | `modifier_chord_two_hrm_keys` | Edge Case | Two HRM keys (Cmd + Shift) combine into modifier chord | **PASSED** (0 ms) |
+| 10 | `hrm_h_with_thumb_no_stuck_state` | Bug 6 Fix | `HRM_H` (`modifier=0`) falls back to auto-shift without getting stuck | **PASSED** (0 ms) |
+| 11 | `release_by_position_cross_layer` | Edge Case | Matrix position tracking unregisters mod across layer changes | **PASSED** (0 ms) |
+
+---
+
+## Technical Discoveries & Test Harness Best Practices
+
+1. **Apple Clang 21 Toolchain Compatibility**:
+   - Modern macOS Clang treats certain C/C++ warnings as errors. In `tests/hrm/test.mk`, added `-Wno-include-next-absolute-path` and `-Wno-strict-prototypes` to `CFLAGS`, and `-Wno-c++11-narrowing` to `CXXFLAGS`.
+2. **QMK Test Include Collision (`KEYMAP_C`)**:
+   - In QMK's test runner, `quantum/keymap_introspection.c` includes `KEYMAP_C="keymap.c"`. If `test.mk` adds `-I` or `VPATH` pointing to `AWDDG/`, the test runner compiles Moonlander's `keymap.c` instead of `tests/test_common/keymap.c`.
+   - **Solution**: `./test.sh` copies `hrm.h` and `hrm.c` directly into `qmk_firmware/tests/hrm/`, allowing `hrm.c` to compile locally in the test target with zero include collisions.
+3. **Monotonic Timer for `deferred_exec_task()`**:
+   - QMK's `deferred_exec_task()` throttles its check using `static uint32_t last_deferred_exec_check`. Because `TestFixture` resets `timer_read32()` to 0 at the start of each test, `TIMER_DIFF_32(now, last) > 0` fails if tests start at t=0.
+   - **Solution**: In `Hrm::SetUp()`, advance time monotonically across tests (`static uint32_t monotonic_time = 1000; monotonic_time += 10000; set_time(monotonic_time);`).
+4. **`TestFixture` Layer Key Mappings**:
+   - In QMK's `TestFixture`, pressing or scanning a key while Layer 1 or Layer 2 is active requires that `set_keymap()` explicitly define a `KeymapKey` for that layer at that position. Unmapped positions trigger test assertions.
+5. **QMK `LT()` Key Buffering & `PERMISSIVE_HOLD`**:
+   - Layer-tap keys (`LT(layer, key)`) buffer their action until either `TAPPING_TERM` (200ms) expires, or an interrupting key triggers `PERMISSIVE_HOLD` on release. In tests simulating "Home-Row First" (`HRM_D` $\rightarrow$ `Thumb` $\rightarrow$ `KC_C`), tapping/releasing `KC_C` resolves the thumb hold deterministically.
 
 ---
 
