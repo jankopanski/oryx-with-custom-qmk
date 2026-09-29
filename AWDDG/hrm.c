@@ -42,12 +42,12 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg) {
 
   // Only fire if still in pending state
   if (state->state == HRM_STATE_PENDING) {
-    if (thumb_1_pressed || thumb_2_pressed || get_highest_layer(layer_state) == 1 || get_highest_layer(layer_state) == 2) {
+    if ((thumb_1_pressed || thumb_2_pressed ||
+         get_highest_layer(layer_state) == 1 ||
+         get_highest_layer(layer_state) == 2) && state->modifier != 0) {
       // Activate modifier instead of auto-shifting
-      if (state->modifier != 0) {
-        register_code(state->modifier);
-        state->state = HRM_STATE_MODIFIER_ACTIVE;
-      }
+      register_code(state->modifier);
+      state->state = HRM_STATE_MODIFIER_ACTIVE;
     } else {
       // Hold shifted version of the key to support repeat
       register_code(KC_LSFT);

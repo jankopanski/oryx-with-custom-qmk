@@ -360,3 +360,216 @@ TEST_F(Hrm, cross_hand_shortcut_thumb_held_throughout) {
     run_one_scan_loop();
     VERIFY_AND_CLEAR(driver);
 }
+
+// ============================================================================
+// Remaining Edge Case Tests
+// ============================================================================
+
+// Bug 4: Holding key past auto-shift timeout registers Shift+key.
+// Subsequent thumb press while key is still held should NOT turn it into a modifier!
+TEST_F(Hrm, bug4_autoshift_prevents_modifier) {
+    TestDriver driver;
+    InSequence s;
+    auto hrm_a   = KeymapKey(0, 1, 0, HRM_A);
+    auto thumb_l = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    set_keymap({hrm_a, thumb_l});
+
+    // 1. Press HRM_A -> enters PENDING state
+    EXPECT_NO_REPORT(driver);
+    hrm_a.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Hold past AUTO_SHIFT_TIMEOUT (180ms) -> fires auto-shift: Shift+A
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT));
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT, KC_A));
+    idle_for(AUTO_SHIFT_TIMEOUT);
+    VERIFY_AND_CLEAR(driver);
+
+    // 3. Press thumb key while HRM_A is still held and hold past TAPPING_TERM.
+    // HRM_A is in TAP_FIRED state, NOT PENDING, so hrm_activate_modifiers must NOT activate Ctrl!
+    EXPECT_NO_REPORT(driver);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    // 4. Release HRM_A -> unregisters A, then Shift
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT));
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_a.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 5. Release thumb
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// Multi-HRM modifier chords: e.g. Left Thumb + HRM_D (Cmd) + HRM_F (Shift) + C -> Cmd+Shift+C
+TEST_F(Hrm, modifier_chord_two_hrm_keys) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l      = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto hrm_d        = KeymapKey(0, 3, 0, HRM_D);
+    auto hrm_f        = KeymapKey(0, 2, 0, HRM_F);
+    auto layer_1_d    = KeymapKey(1, 3, 0, HRM_D);
+    auto layer_1_f    = KeymapKey(1, 2, 0, HRM_F);
+    auto kc_c         = KeymapKey(0, 5, 0, KC_C);
+    auto layer_1_c    = KeymapKey(1, 5, 0, KC_C);
+    set_keymap({thumb_l, hrm_d, hrm_f, layer_1_d, layer_1_f, kc_c, layer_1_c});
+
+    // 1. Hold thumb to enter Layer 1
+    EXPECT_NO_REPORT(driver);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Press HRM_D -> registers Cmd (KC_LEFT_GUI) immediately
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    hrm_d.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 3. Press HRM_F -> registers Shift (KC_LEFT_SHIFT) immediately alongside Cmd
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_SHIFT));
+    hrm_f.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 4. Tap KC_C -> sends Cmd + Shift + C
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_SHIFT, KC_C));
+    kc_c.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_SHIFT));
+    kc_c.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 5. Release HRM_F -> Shift unregisters, Cmd remains
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    hrm_f.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 6. Release HRM_D -> Cmd unregisters
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_d.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 7. Release thumb
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// HRM_H has no modifier assigned (state->modifier == 0).
+// When pressed during thumb hold and held past AUTO_SHIFT_TIMEOUT,
+// it should fallback to auto-shift (Shift+H) rather than entering a stuck state.
+TEST_F(Hrm, hrm_h_with_thumb_no_stuck_state) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l      = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto hrm_h        = KeymapKey(0, 0, 1, HRM_H);
+    auto layer_1_h    = KeymapKey(1, 0, 1, HRM_H);
+    set_keymap({thumb_l, hrm_h, layer_1_h});
+
+    // 1. Hold thumb to enter Layer 1
+    EXPECT_NO_REPORT(driver);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Press HRM_H -> modifier is 0, so enters PENDING with auto-shift timer
+    EXPECT_NO_REPORT(driver);
+    hrm_h.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 3. Hold past AUTO_SHIFT_TIMEOUT (180ms) -> fires auto-shift: Shift+H
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT));
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT, KC_H));
+    idle_for(AUTO_SHIFT_TIMEOUT);
+    VERIFY_AND_CLEAR(driver);
+
+    // 4. Release HRM_H -> unregisters H, then Shift
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT));
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_h.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 5. Release thumb
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 6. Verify HRM_H state returned to IDLE
+    hrm_key_state_t *state = hrm_get_state(HRM_H);
+    EXPECT_NE(state, nullptr);
+    EXPECT_EQ(state->state, HRM_STATE_IDLE);
+}
+
+// Cross-layer release:
+// Press HRM_A on Layer 0, switch to Layer 1 (where matrix position has different keycode KC_1),
+// and release the key. hrm_get_state_by_position must find and release the modifier cleanly.
+TEST_F(Hrm, release_by_position_cross_layer) {
+    TestDriver driver;
+    InSequence s;
+    auto hrm_a        = KeymapKey(0, 1, 0, HRM_A);
+    auto layer_1_key  = KeymapKey(1, 1, 0, KC_1);
+    auto thumb_l      = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto kc_c         = KeymapKey(0, 5, 0, KC_C);
+    auto layer_1_c    = KeymapKey(1, 5, 0, KC_C);
+    set_keymap({hrm_a, layer_1_key, thumb_l, kc_c, layer_1_c});
+
+    // 1. Press HRM_A on Layer 0
+    EXPECT_NO_REPORT(driver);
+    hrm_a.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Press thumb key to switch to Layer 1
+    // Tap KC_C to resolve thumb hold under PERMISSIVE_HOLD
+    EXPECT_NO_REPORT(driver);
+    thumb_l.press();
+    run_one_scan_loop();
+    kc_c.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Resolves: Ctrl activates, C sent, C released
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL, KC_C));
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    kc_c.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 3. Now on Layer 1, release matrix key (col 1, row 0) via hrm_a.release()
+    // Matrix position matches hrm_a, even though Layer 1 maps it to KC_1!
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_a.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 4. Release thumb key
+    thumb_l.release();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+
+    // 5. Verify state is IDLE
+    hrm_key_state_t *state = hrm_get_state(HRM_A);
+    EXPECT_NE(state, nullptr);
+    EXPECT_EQ(state->state, HRM_STATE_IDLE);
+}
+
