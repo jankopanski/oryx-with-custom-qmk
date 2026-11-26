@@ -1,37 +1,31 @@
-# Oryx with custom QMK
+# Moonlander Custom QMK Layout (`AWDDG`)
 
-This repository allows combining the convenience of [Oryx’s](https://www.zsa.io/oryx) graphical layout editing with the power of [QMK](https://qmk.fm), allowing you to customize your Oryx layout with advanced QMK features like Achordion and Repeat Key, while automating firmware builds through GitHub Actions.
+Custom 5-layer ZSA Moonlander firmware in [`AWDDG/`](./AWDDG/) built for **macOS virtual Colemak**, with a standalone thumb-gated Home-Row Mod engine (`hrm.h`/`hrm.c`), mirrored Number/Symbol layers, a symmetric Mod-Alpha Tri-Layer (Layer 4), macOS Navigation (Layer 3), One-Shot Shift, Auto Shift toggle, Repeat Key, and a 32-test QMK unit test suite.
 
-For a detailed guide, check out the full [blog post here](https://blog.zsa.io/oryx-custom-qmk-features).
+> **Source of truth:** `AWDDG/` in this git repository is the source of truth for the layout. Do **not** edit the layout in Oryx and run the Oryx merge workflow — build locally and flash with Keymapp instead.
 
-## How it works
+## Documentation
 
-Each time you run the GitHub Action, the workflow will:
-1. Fetch the latest changes made in Oryx.
-2. Merge them with any QMK features you've added in the source code.
-3. Build the firmware, incorporating modifications from both Oryx and your custom source code.
+- [Layout & 5-Layer Reference](./docs/layout_analysis.md) — complete visual maps for Layers 0–4, shortcut table, and HRM state machine
+- [Home-Row Mods & Timing Guide](./docs/HOME_ROW_MODS.md) — `hrm.c` behavior, Colemak mapping, `AS_TOGG`, `OSM(MOD_LSFT)`, `QK_REP`, and per-key tap/hold settings
+- [HRM Unit Test Plan & Suite Catalog](./docs/hrm_test_plan.md) — all 32 Google Test cases and harness setup
 
-## How to use
+## Local Test, Build & Flash Workflow
 
-1. Fork this repository (be sure to **uncheck the "Copy the main branch only" option**).
-2. To initialize the repository with your layout:
-   - Go to the **Actions** tab.
-   - Select **Fetch and build layout**.
-   - Click **Run workflow**.
-   - Input your layout ID and keyboard type (your layout must be public in Oryx), then run the workflow.
-   - (To avoid having to input values each time, you can modify the default values at the top of the `.github/workflows/fetch-and-build-layout.yml` file).
-3. A folder containing your layout will be generated at the root of the repository.
-4. You can now add your custom QMK features to this folder:
-   - Edit `config.h`, `keymap.c` and `rules.mk` according to the [QMK documentation](https://github.com/qmk/qmk_firmware/tree/master/docs/features).
-   - Commit and push to the **main** branch.
-5. You can continue editing your layout through Oryx:
-   - Make your changes in Oryx. 
-   - Optionally, add a description of your changes in the **Some notes about what you changed** field; if provided, this will be used as commit message.
-   - Confirm changes by clicking the **Compile this layout** button.
-6. To build the firmware (including both Oryx and code modifications), rerun the GitHub Action. The firmware will be available for download in the action’s artifacts.
-7. Flash your downloaded firmware using [Keymapp](https://www.zsa.io/flash#flash-keymap).
-8. Enjoy!
+1. **Sync sources and run all 32 unit tests:**
+   ```bash
+   ./test.sh
+   ```
+2. **Build the Moonlander firmware binary:**
+   ```bash
+   make -C ../qmk_firmware zsa/moonlander/revb:AWDDG
+   ```
+   Output binary: `../qmk_firmware/zsa_moonlander_revb_AWDDG.bin`
+3. **Flash to your Moonlander:**
+   Open [Keymapp](https://www.zsa.io/flash#flash-keymap) and flash `zsa_moonlander_revb_AWDDG.bin`.
 
-## Oryx Chrome extension
+---
 
-To make building even easier, [@nivekmai](https://github.com/nivekmai) created an [Oryx Chrome extension](https://chromewebstore.google.com/detail/oryx-extension/bocjciklgnhkejkdfilcikhjfbmbcjal) to be able to trigger the GitHub Actions from inside Oryx itself.
+## Upstream Origin (`oryx-with-custom-qmk`)
+
+This repository was originally forked from ZSA's [oryx-with-custom-qmk](https://blog.zsa.io/oryx-custom-qmk-features) template. The `.github/workflows/fetch-and-build-layout.yml` workflow remains in the repo for reference, but local QMK builds are recommended now that `AWDDG/keymap.c` is maintained directly in code.

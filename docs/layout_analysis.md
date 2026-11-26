@@ -1,170 +1,159 @@
-# Layout & Home-Row Mod Analysis
+# Layout & Home-Row Mod Analysis (AWDDG — 5-Layer macOS Colemak)
 
 ## 1. Layer Architecture
 
+The keymap targets **macOS virtual Colemak** (OS-level Colemak on top of standard QMK QWERTY keycodes) so the MacBook's built-in keyboard and Moonlander behave identically when docking/undocking.
+
+```text
+Layer 4 ─ Mod-Alpha Tri-Layer (Hold Both Primary Thumbs, Either Order)
+  ├── Explicit Layer 0 alphas, numbers, punctuation & explicit thumb mods
+  └── Opposite-hand-aware HRMs on BOTH halves (Cmd+Opt+A, Cmd+Ctrl+J in one motion)
+
+Layer 3 ─ macOS Navigation, Word/Line Editing & Media (Hold TAB key or Left Red MO(3))
+  ├── Right hand: J K L ; arrows, Cmd+←/→ line start/end, Opt+←/→ word jump,
+  │               Opt+Bspc / Bspc / Del, Home / PgDn / PgUp / End
+  ├── Left hand:  held Ctrl / Alt / Cmd on A / S / D; Media & Volume; AS_TOGG
+  └── Top-right corner: QK_BOOT (only bootloader key in the layout)
+
+Layer 2 ─ Mirrored Symbols/Numbers + Right HRMs (Hold Right Primary Thumb: LT(2, KC_SPACE))
+  ├── Left hand:  ! @ # $ % | ~ { [ ( | ^ } ] ) &
+  ├── Right hand: + 7 8 9 * / | - [Sft Cmd Alt Ctl] ` | _ 1 2 3 \ =
+  └── Left inner thumb: KC_BSPC (fix typos without dropping Layer 2)
+
+Layer 1 ─ Numbers + Mirrored Symbols + Left HRMs (Hold Left Primary Thumb: LT(1, KC_BSPC))
+  ├── Left hand:  ! @ # $ % | [Ctl Alt Cmd Sft] | | ^ } ] ) &
+  ├── Right hand: + 7 8 9 * / | - 4 5 6 = ` | _ 1 2 3 \ =
+  └── Right thumb: KC_BSPC (inner), KC_DOT (middle), LT(2, KC_0) (Space thumb -> 0 or L2⇒L4)
+
+Layer 0 ─ Base (macOS Virtual Colemak + Option 1 Thumbs)
+  ├── Home-row:   HRM_A(A), HRM_S(R), HRM_D(S), HRM_F(T), G(D) | H, HRM_J(N), HRM_K(E), HRM_L(I), HRM_SCLN(O)
+  ├── Left thumb:  LT(1, KC_BSPC), MT(MOD_LGUI, KC_ENTER), KC_LEFT_CTRL, MO(3) (red)
+  ├── Right thumb: KC_LEFT_ALT, OSM(MOD_LSFT), LT(2, KC_SPACE), AS_TOGG (red)
+  └── Extra keys:  TAB/L3 right of D, Mute/Vol+/Vol- left of 6/J/H, QK_REP right of ↑
 ```
-Layer 3 ─ Navigation/Media (TT(3) toggle)
-  ├── Arrow keys (HJKL positions), Home/End/PgUp/PgDn
-  ├── One-shot modifiers (OSM) on left home-row
-  └── Media controls on right hand
-
-Layer 2 ─ Symbols (right thumb: LT(2, KC_SPACE))
-  ├── Left hand: ! @ # $ % and DUAL_FUNC_1/2/3 (symbols with mod-tap)
-  ├── Right home-row: HRM_J, HRM_K, HRM_L, HRM_SCLN → modifiers
-  └── Right hand: } ] ) &
-
-Layer 1 ─ Numbers (left thumb: LT(1, KC_ENTER))
-  ├── Left home-row: HRM_A, HRM_S, HRM_D, HRM_F → modifiers
-  ├── Right hand: numpad (7,8,9 / 4,5,6 / 1,2,3 / 0) with MT() mods
-  └── Right home-row: standard MT(MOD_*, KC_number) keys
-
-Layer 0 ─ Base (QWERTY Alpha)
-  ├── Home-row: HRM_A, HRM_S, HRM_D, HRM_F, KC_G, KC_H, HRM_J, HRM_K, HRM_L, HRM_SCLN
-  ├── Left thumb cluster:  LT(1, KC_ENTER), MT(MOD_LGUI, KC_TAB), KC_LEFT_CTRL
-  └── Right thumb cluster: KC_LEFT_ALT, DUAL_FUNC_0, LT(2, KC_SPACE)
-```
-
-## 2. Core Architectural Philosophy & Mechanics
-
-### The Problem Standard Home-Row Mods Face
-Standard QMK Home-Row Mods (`MT(MOD, KC)`) are notorious for misfires during fast typing: fast rolls or slight overlaps cause keys to resolve as modifiers (e.g., accidental `Cmd+S` or `Ctrl+Q`).
-
-### Your Design Principle
-1. **Layer 0 (Base / Alphas)**:
-   - Home-row keys (`A, S, D, F` and `J, K, L, ;`) behave strictly as **regular letters**.
-   - If held alone past `AUTO_SHIFT_TIMEOUT` (180ms), they auto-shift to uppercase (`A, S, D, F...`).
-   - They **never** become modifiers on Layer 0 on their own.
-2. **Thumb-Gated Modifiers (Layer 1 & Layer 2)**:
-   - Modifiers can **only** be activated in conjunction with a thumb layer key:
-     - Left Thumb: `LT(1, KC_ENTER)` (Switches to Layer 1: Numbers on right hand + HRM on left).
-     - Right Thumb: `LT(2, KC_SPACE)` (Switches to Layer 2: Symbols on left hand + HRM on right).
-3. **Cross-Hand Shortcut Design**:
-   - Shortcuts are designed to be activated with the **opposite hand's modifiers**:
-     - Right Thumb + Right Pinky (`HRM_SCLN` = Ctrl) $\rightarrow$ Left Hand `C` (`Ctrl+C`).
-     - Left Thumb + Left Pinky (`HRM_A` = Ctrl) $\rightarrow$ Right Hand key.
-4. **Flexible Sequencing ("Home-Row First" vs. "Thumb First")**:
-   - **Thumb First**: Hold Thumb $\rightarrow$ press home-row key $\rightarrow$ immediate modifier.
-   - **Home-Row First**: Press home-row key $\rightarrow$ realize you need a modifier $\rightarrow$ press Thumb within the tapping/auto-shift window $\rightarrow$ transitions pending key into a modifier.
 
 ---
 
-## 3. Thumb Keys & Layer Transitions
+## 2. Complete 5-Layer Maps
 
-Two thumb keys drive the entire HRM system:
+*Colemak letter reference underneath each half:*
+```text
+LEFT:  [Out] Q  W  F  P  G [In]       RIGHT: [In] J  L  U  Y  ; [Out]
+       [Out] A  R  S  T  D [In]              [In] H  N  E  I  O [Out]
+       [Out] Z  X  C  V  B                        K  M  ,  .  / [Out]
+```
+*Thumb row order: left = Primary, Middle, Inner, Red · right = Red, Inner, Middle, Primary.*
 
-| Thumb Key | Position | QMK Code | Tap | Hold |
-|-----------|----------|----------|-----|------|
-| Left thumb | bottom-left cluster | `LT(1, KC_ENTER)` | Enter | Activate Layer 1 |
-| Right thumb | bottom-right cluster | `LT(2, KC_SPACE)` | Space | Activate Layer 2 |
-
-### How Thumb Tracking Works
-
-```c
-// Track physical thumb state
-if (keycode >= QK_LAYER_TAP && keycode <= QK_LAYER_TAP_MAX) {
-    uint8_t layer = QK_LAYER_TAP_GET_LAYER(keycode);
-    if (layer == 1) thumb_1_pressed = record->event.pressed;
-    else if (layer == 2) thumb_2_pressed = record->event.pressed;
-}
+### Layer 0 — Base
+```text
+LEFT HALF                                         RIGHT HALF
+R0: ESC   1     2     3     4     5     RGB       MUTE  6     7     8     9     0     ___
+R1: DEL   Q     W     E(F)  R(P)  T(G)  `         VOL+  Y(J)  U(L)  I(U)  O(Y)  P(;)  ___
+R2: BSPC* A     S(R)  D(S)  F(T)  G(D)  TAB/L3    VOL-  H     J(N)  K(E)  L(I)  ;(O)  '
+R3: ___   Z     X     C     V     B                     N(K)  M     ,     .     /     ___
+R4: ___   ___   ___   ←     →                           ↓     ↑     REP   ___   ___
+Thumb: [BSPC/L1] [ENT/Cmd] [LCtrl] (Red:MO3)      (Red:AS_TG) [LAlt] [OSM_Sft] [SPC/L2]
 ```
 
-> [!IMPORTANT]
-> `thumb_1_pressed` and `thumb_2_pressed` track the **physical press state**, separate from `layer_state`. This is critical because QMK's `LT()` processing may delay the actual layer change until tapping term expires, but the physical thumb tracking updates immediately on the initial press event.
+### Layer 1 — Numbers + Mirrored Symbols + Left HRMs (Hold Left Primary Thumb)
+```text
+LEFT HALF                                         RIGHT HALF
+R0: ___   F1    F2    F3    F4    F5    F6        F7    F8    F9    F10   F11   F12   ___
+R1: ___   !     @     #     $     %     HOME      PGUP  +     7     8     9     *     /
+R2: ___  [Ctl] [Alt] [Cmd] [Sft]  |     END       PGDN  -     4     5     6     =     `
+R3: ___   ^     }     ]     )     &                     _     1     2     3     \     =
+R4: ___   ___   ___   ___   ___                               ___   ___   ___   ___   ___
+Thumb: [HELD]  ___   ___   (Red:___)              (Red:___)  BSPC   .    [0 / Hold→L2⇒L4]
+```
+
+### Layer 2 — Mirrored Symbols/Numbers + Right HRMs (Hold Right Primary Thumb)
+```text
+LEFT HALF                                         RIGHT HALF
+R0: ___   F1    F2    F3    F4    F5    F6        F7    F8    F9    F10   F11   F12   ___
+R1: ___   !     @     #     $     %     HOME      PGUP  +     7     8     9     *     /
+R2: ___   ~     {     [     (     |     END       PGDN  -    [Sft] [Cmd] [Alt] [Ctl]  `
+R3: ___   ^     }     ]     )     &                     _     1     2     3     \     =
+R4: ___   ___   ___   ___   ___                               ___   ___   ___   ___   ___
+Thumb: [→L1⇒L4] ___  BSPC  (Red:___)              (Red:___)  ___   ___   [HELD]
+```
+
+### Layer 3 — macOS Navigation & Media (Hold `TAB` key or Left Red `MO(3)`)
+```text
+LEFT HALF                                         RIGHT HALF
+R0: ___   ___   ___   ___   ___   ___   ___       ___   ___      ___       ___     ___    ___   QK_BOOT
+R1: ___   PREV  PLAY  NEXT  MUTE  ___   ___       ___   Opt+←    Opt+Bspc  Opt+→   Bspc   Del   ___
+R2: ___   Ctl   Alt   Cmd   ___   ___  [HELD]     ___   Cmd+←    ←         ↓       ↑      →     ___
+R3: ___   VOL-  VOL+  AS_TG ___   ___                   Cmd+→    Home      PgDn    PgUp   End   ___
+R4: ___   ___   ___   ___   ___                                  ___       ___     ___    ___   ___
+Thumb:  ___   ___   (LCtrl) (Red:HELD)            (Red:___)  ___  (Shift)  ___
+```
+
+### Layer 4 — Mod-Alpha Tri-Layer (Hold Both Primary Thumbs, Either Order)
+```text
+LEFT HALF                                         RIGHT HALF
+R0: ESC   1     2     3     4     5     NO        NO    6     7     8     9     0     NO
+R1: DEL   Q     W     E(F)  R(P)  T(G)  `         NO    Y(J)  U(L)  I(U)  O(Y)  P(;)  NO
+R2: BSPC [A/Ctl][S/Alt][D/Cmd][F/Sft] G TAB       NO    H    [J/Sft][K/Cmd][L/Alt][;/Ctl] '
+R3: NO    Z     X     C     V     B                     N(K)  M     ,     .     /     NO
+R4: NO    NO    NO    ←     →                           ↓     ↑     NO    NO    NO
+Thumb: [HELD] [ENT/Cmd] [LCtrl] (Red:NO)          (Red:NO) [LAlt] [OSM_Sft] [HELD]
+```
 
 ---
 
-## 4. Home-Row Mod State Machine
+## 3. Shortcut Quick Reference
 
-Each of the 9 HRM keys tracks its own state:
+Rule of thumb: **hold modifiers on the hand opposite the target key.**
+
+| Shortcut | Motion |
+|---|---|
+| `Shift + Enter` (AI chat newline) | Hold/tap right middle thumb (`OSM_Sft`) + tap left middle thumb (`Enter`) |
+| `Opt + Bspc` (delete word) | Hold right inner thumb (`LAlt`) + tap left primary thumb (`Bspc`) |
+| `Cmd + Enter` (send) | Hold right primary thumb (`L2`) → right `E` (`Cmd`) → tap left middle thumb (`Enter`) |
+| `Cmd + Opt + A` | Both thumbs (`L4`) → right `E`+`I` (`Cmd+Opt`) → left `A` |
+| `Cmd + Ctrl + J` | Both thumbs (`L4`) → left `S`+`A` (`Cmd+Ctrl`) → right Colemak `J` (`Y`) |
+| `Cmd + Opt + $` | Right thumb (`L2`) → right `E`+`I` (`Cmd+Opt`) → left `$` |
+| `Cmd + Opt + 5` / `Cmd + =` | Left thumb (`L1`) → left `S`+`R` (`Cmd+Opt`) → right `5` / `=` |
+| `Cmd + Ctrl + 4` | Left thumb (`L1`) → left `A`+`S` (`Ctrl+Cmd`) → right numpad `4` |
+| `Cmd + Ctrl + Shift + 4` (screenshot) | Left thumb (`L1`) → left `A`+`S`+`T` → right numpad `4` |
+| `Cmd + 0` (reset zoom) | Left thumb (`L1`) → left `S` (`Cmd`) → tap right Space thumb (`0`) |
+| `Ctrl + ←/→` (macOS Spaces) | Hold `TAB/L3` + left inner thumb (`LCtrl`) + `J` / `;` (or Layer 0 `LCtrl` + `←/→`) |
+
+---
+
+## 4. Custom HRM State Machine (`AWDDG/hrm.c`)
+
+On Colemak, the 8 HRM keys (`A R S T` + `N E I O`) cover ~63.5% of all typed letters, so Layer 0 keeps them strictly as plain letters (with optional Auto Shift) and gates modifiers behind the two primary thumbs (`LT(1, KC_BSPC)`, `LT(2, KC_SPACE)`, and Layer 1's `LT(2, KC_0)`).
 
 ```mermaid
 stateDiagram-v2
     [*] --> IDLE
-    IDLE --> PENDING: Press HRM key on L0 (start 180ms timer)
-    IDLE --> MODIFIER_ACTIVE: Press HRM key while Thumb held (immediate)
-    
-    PENDING --> TAP_FIRED: 180ms timer expires & NO thumb held (register Shift+Letter)
-    PENDING --> MODIFIER_ACTIVE: Thumb pressed within 180ms (register Mod)
-    PENDING --> SETTLED_TAP: Another regular key pressed (eager flush to prevent inversion)
-    PENDING --> IDLE: Released before 180ms & NO other key (tap letter)
-    
-    SETTLED_TAP --> IDLE: Physical release (already tapped; no action)
-    TAP_FIRED --> IDLE: Physical release (unregister Shift+Letter)
-    MODIFIER_ACTIVE --> IDLE: Physical release (unregister Mod; no letter output)
+    IDLE --> DIRECT_KEY: Opposite-hand HRM mod held OR any active mod/OSM (immediate letter)
+    IDLE --> MODIFIER_ACTIVE: Thumb 1/2 held or on Layer 1/2/4 (0ms modifier)
+    IDLE --> PENDING: Plain Layer 0 press (start 180ms Auto Shift timer)
+
+    PENDING --> TAP_FIRED: 180ms timer expires & Auto Shift ON (weak Shift + letter)
+    PENDING --> PENDING: 180ms timer expires & Auto Shift OFF (stays lowercase on release)
+    PENDING --> MODIFIER_ACTIVE: Thumb hold within window (Home-Row First)
+    PENDING --> SETTLED_TAP: Regular key or thumb tap pressed (chronological eager flush)
+    PENDING --> IDLE: Released before timeout (tap lowercase letter)
+
+    SETTLED_TAP --> IDLE: Physical release (already tapped; ignored)
+    TAP_FIRED --> IDLE: Physical release (clear weak Shift + unregister letter)
+    DIRECT_KEY --> IDLE: Physical release (unregister letter)
+    MODIFIER_ACTIVE --> IDLE: Physical release (unregister mod; persists after thumb release)
 ```
 
-### HRM Key Assignments
-
-| Key | Letter | Modifier | Appears on Layers |
-|-----|--------|----------|-------------------|
-| HRM_A | KC_A | KC_LCTL (Ctrl) | 0, 1 |
-| HRM_S | KC_S | KC_LALT (Option) | 0, 1 |
-| HRM_D | KC_D | KC_LGUI (Cmd) | 0, 1 |
-| HRM_F | KC_F | KC_LSFT (Shift) | 0, 1 |
-| HRM_H | KC_H | **0 (none)** | 0 only |
-| HRM_J | KC_J | KC_LSFT (Shift) | 0, 2 |
-| HRM_K | KC_K | KC_LGUI (Cmd) | 0, 2 |
-| HRM_L | KC_L | KC_LALT (Option) | 0, 2 |
-| HRM_SCLN | KC_SCLN | KC_LCTL (Ctrl) | 0, 2 |
+### Key Mechanisms
+1. **Thumb hold vs. tap discrimination**: Only `HRM_THUMB_1_KEYCODE` (`LT(1, KC_BSPC)`), `HRM_THUMB_2_KEYCODE` (`LT(2, KC_SPACE)`), and `HRM_THUMB_2_ALT_KEYCODE` (`LT(2, KC_0)`) control thumb tracking, and only when `record->tap.count == 0`. Quick rolls into `Space`/`Bspc`/`0` flush pending HRM letters instead of hijacking them into shortcuts.
+2. **Opposite-Hand Letter Resolution**: On Layer 4 (both halves have HRMs), once a modifier is held on one hand, pressing an HRM key on the opposite hand immediately registers its letter (`HRM_STATE_DIRECT_KEY`).
+3. **Active-modifier bypass & weak-mod Auto Shift**: Holding `Cmd/Enter`, `LShift`, `LCtrl`, `LAlt`, `OSM`, or Option A cross-hand mods bypasses the 180ms HRM timer immediately; Auto Shift uses weak Shift (`add_weak_mods`) so it never clears a physically held Shift.
+4. **Auto Shift toggle (`AS_TOGG`)**: `hrm_autoshift_callback()` checks `get_autoshift_state()` so toggling Auto Shift off disables it for all letters, including `A R S T N E I O`.
+5. **Non-HRM → HRM Auto Shift flush**: Pressing an `HRM_*` key calls `process_auto_shift(KC_NO, record)` so QMK flushes any buffered regular alpha before the HRM key is processed.
+6. **Repeat Key (`QK_REP`) integration**: `remember_last_key_user()` ignores HRM modifier holds, and `get_repeat_key_count() != 0` bypasses the HRM state machine to emit the repeated letter at 0ms.
 
 ---
 
-## 5. Identified Bugs & Solutions
+## 5. Automated Test Suite Summary
 
-### Bug 1: Key Inversion / Out-of-Order Rolling (Fast Typing) [FIXED & VERIFIED]
-* **Scenario**: Typing the word **"from"** quickly.
-* **Problem**: `HRM_F` is pressed and enters `PENDING` (waiting 180ms). 30ms later, `KC_R` is pressed. Because `KC_R` is a regular key, it bypassed the HRM queue and emitted `R` immediately. On release of `F`, `tap_code(KC_F)` ran, outputting **"rf" instead of "fr"**.
-* **Solution**:
-  1. `hrm_flush_pending_keys()` eagerly flushes all pending HRM keys in chronological order of press as taps (`tap_code`) and marks them `HRM_STATE_SETTLED_TAP` before processing any incoming regular key.
-  2. `hrm_handle_release()` includes inverted release roll protection: if key `D` is released while an older pending key `S` is still in the queue, `S` is flushed first, guaranteeing press order ("sd").
-* **Verified by Tests**: `Hrm.fix_bug1_fast_roll_key_inversion` and `Hrm.fix_bug1_inverted_release_roll`.
-
-### Bug 2: "Thumb First" Modifier Lag & Missing Mouse-Click Chords [FIXED & VERIFIED]
-* **Scenario**: Holding Left Thumb, then pressing `D` (Cmd) to do `Cmd + Click` or `Cmd + C`.
-* **Problem**: In original code, `hrm_activate_modifiers()` ran before `hrm_handle_press()`. When `HRM_D` was pressed while Thumb was held, it was put into `PENDING` with a 180ms timer. A mouse click or quick tap within 180ms saw no modifier active.
-* **Solution**: In `hrm_handle_press()`, if a thumb key is already held (`thumb_1_pressed` or `thumb_2_pressed`) or the active layer is Layer 1 or 2, the modifier registers immediately at 0ms and transitions directly to `HRM_STATE_MODIFIER_ACTIVE` without starting any timer.
-* **Verified by Tests**: `Hrm.modifier_chord_two_hrm_keys`, `Hrm.cross_hand_shortcut_ctrl_c_option_a`.
-
-### Bug 3: Phantom `Enter` / `Space` on Thumb Key Release [VERIFIED]
-* **Scenario**: Press `D` (Cmd), press Left Thumb (`LT(1, KC_ENTER)`), release `D`, release Thumb within 200ms.
-* **Resolution**: Under `PERMISSIVE_HOLD` (configured in `config.h`), tapping another key while the `LT()` key is pressed resolves the thumb hold immediately, avoiding phantom taps.
-* **Verified by Tests**: `Hrm.home_row_first_modifier_activation`.
-
-### Bug 4: 180ms Lockout on "Home-Row First" [VERIFIED]
-* **Scenario**: Press `A`, hold past 180ms before hitting the Thumb key.
-* **Behavior**: At 180ms, auto-shift fires uppercase `A` (`TAP_FIRED`). The key can no longer transition to a modifier. If the thumb key is subsequently pressed while `A` is still held, `hrm_activate_modifiers()` checks `state->state == HRM_STATE_PENDING` and ignores keys in `TAP_FIRED` state, preventing accidental modifier activation.
-* **Verified by Tests**: `Hrm.bug4_autoshift_prevents_modifier`.
-
-### Bug 5: Thumb Released Before HRM Key (Option A vs. Option B) [SUPPORTED & VERIFIED]
-* **Design Decision**: **Option A** is selected and implemented. The modifier remains active as long as the HRM key is physically held down, even if the thumb key is released and the keyboard returns to Layer 0. Upon release of the HRM key, the modifier unregisters cleanly and no letter is emitted.
-* **Benefit**: Enables cross-hand shortcuts like:
-  1. Hold Right Thumb (`LT(2, KC_SPACE)`) $\rightarrow$ Layer 2.
-  2. Press Right Pinky (`HRM_SCLN`) $\rightarrow$ registers `Ctrl` immediately.
-  3. Release Right Thumb $\rightarrow$ keyboard returns to Layer 0 while `Ctrl` remains held.
-  4. Press Left Hand `C` $\rightarrow$ host receives `Ctrl + C`.
-  5. Release Left Hand `C`.
-  6. Release Right Pinky $\rightarrow$ `Ctrl` unregisters cleanly, no semicolon (`;`) emitted.
-* **Verified by Tests**: `Hrm.cross_hand_shortcut_ctrl_c_option_a`, `Hrm.cross_hand_shortcut_thumb_held_throughout`.
-
-### Bug 6: HRM_H With Thumb Stuck State [FIXED & VERIFIED]
-* **Problem**: `HRM_H` has `modifier = 0`. If held past 180ms while thumb was pressed, it previously skipped modifier activation and remained stuck in `HRM_STATE_PENDING` with an invalid token.
-* **Solution**: In `hrm_autoshift_callback()`, if `thumb_1_pressed || thumb_2_pressed || layer == 1 || layer == 2`, the state machine checks `if (state->modifier != 0)`. If `state->modifier == 0` (as for `HRM_H`), it cleanly falls back to auto-shift (`Shift + H`, transitioning to `HRM_STATE_TAP_FIRED`). On release, `unregister_code` cleans up and resets state to `HRM_STATE_IDLE`.
-* **Verified by Tests**: `Hrm.hrm_h_with_thumb_no_stuck_state`.
-
----
-
-## 6. Automated Test Suite Summary
-
-The entire HRM behavior is validated by 11 unit tests running in QMK's native Google Test harness (`tests/hrm/test_hrm.cpp`):
-1. `quick_tap_sends_letter` (0 ms)
-2. `hold_past_timeout_sends_shifted_letter` (0 ms)
-3. `home_row_first_modifier_activation` (0 ms)
-4. `fix_bug1_fast_roll_key_inversion` (0 ms)
-5. `fix_bug1_inverted_release_roll` (0 ms)
-6. `cross_hand_shortcut_ctrl_c_option_a` (0 ms)
-7. `cross_hand_shortcut_thumb_held_throughout` (0 ms)
-8. `bug4_autoshift_prevents_modifier` (0 ms)
-9. `modifier_chord_two_hrm_keys` (0 ms)
-10. `hrm_h_with_thumb_no_stuck_state` (0 ms)
-11. `release_by_position_cross_layer` (0 ms)
-
+All behaviors are verified by **32 unit tests** in [`tests/hrm/test_hrm.cpp`](../tests/hrm/test_hrm.cpp) running via `./test.sh` (QMK's Google Test harness with `AUTO_SHIFT_ENABLE = yes`, `DEFERRED_EXEC_ENABLE = yes`, `REPEAT_KEY_ENABLE = yes`, `PERMISSIVE_HOLD_PER_KEY`, `TAPPING_TERM_PER_KEY`, and `QUICK_TAP_TERM_PER_KEY`). See [`docs/hrm_test_plan.md`](./hrm_test_plan.md) for the complete 32-test matrix.
