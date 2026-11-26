@@ -7,6 +7,8 @@
 extern "C" {
 #include "hrm.h"
 #include "deferred_exec.h"
+#include "process_auto_shift.h"
+#include "repeat_key.h"
 
 void set_time(uint32_t t);
 
@@ -15,13 +17,27 @@ void housekeeping_task_user(void) {
     deferred_exec_task();
 }
 
-// Mirror keymap.c: activate modifiers on layer changes
+// Mirror keymap.c: update tri-layer (1 + 2 -> 4) and activate modifiers on layer changes
 layer_state_t layer_state_set_user(layer_state_t state) {
+    state = update_tri_layer_state(state, 1, 2, 4);
     uint8_t layer = get_highest_layer(state);
-    if (layer == 1 || layer == 2) {
+    if (layer == 1 || layer == 2 || layer == 4) {
         hrm_activate_modifiers();
     }
     return state;
+}
+
+// Mirror keymap.c: per-key tap/hold timing callbacks
+bool get_permissive_hold(uint16_t keycode, keyrecord_t *record) {
+    return keycode != LT(2, KC_0);
+}
+
+uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
+    return keycode == LT(2, KC_0) ? 150 : TAPPING_TERM;
+}
+
+uint16_t get_quick_tap_term(uint16_t keycode, keyrecord_t *record) {
+    return keycode == LT(1, KC_BSPC) ? 150 : 0;
 }
 
 // Mirror keymap.c: delegate to hrm_process_record
@@ -46,7 +62,7 @@ class Hrm : public TestFixture {
         monotonic_time += 10000;
         set_time(monotonic_time);
 
-        // Reset all HRM states and thumb tracking between tests
+        // Reset all HRM states, thumb tracking, layers, auto-shift, and repeat key between tests
         for (int i = 0; i < HRM_COUNT; i++) {
             hrm_states[i].state = HRM_STATE_IDLE;
             hrm_states[i].press_time = 0;
@@ -56,6 +72,11 @@ class Hrm : public TestFixture {
         }
         thumb_1_pressed = false;
         thumb_2_pressed = false;
+        layer_clear();
+        clear_oneshot_mods();
+        autoshift_enable();
+        set_last_keycode(KC_NO);
+        set_last_mods(0);
     }
 };
 
@@ -160,7 +181,7 @@ TEST_F(Hrm, home_row_first_modifier_activation) {
     TestDriver driver;
     InSequence s;
     auto hrm_d   = KeymapKey(0, 3, 0, HRM_D);
-    auto thumb_l = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto thumb_l = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
     auto kc_c    = KeymapKey(0, 5, 0, KC_C);
     auto layer_1_c = KeymapKey(1, 5, 0, KC_C);
     set_keymap({hrm_d, thumb_l, kc_c, layer_1_c});
@@ -483,7 +504,7 @@ TEST_F(Hrm, bug4_autoshift_prevents_modifier) {
     TestDriver driver;
     InSequence s;
     auto hrm_a   = KeymapKey(0, 1, 0, HRM_A);
-    auto thumb_l = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto thumb_l = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
     set_keymap({hrm_a, thumb_l});
 
     // 1. Press HRM_A -> enters PENDING state
@@ -543,7 +564,7 @@ TEST_F(Hrm, bug4_autoshift_prevents_modifier) {
 TEST_F(Hrm, modifier_chord_two_hrm_keys) {
     TestDriver driver;
     InSequence s;
-    auto thumb_l      = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto thumb_l      = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
     auto hrm_d        = KeymapKey(0, 3, 0, HRM_D);
     auto hrm_f        = KeymapKey(0, 2, 0, HRM_F);
     auto layer_1_d    = KeymapKey(1, 3, 0, HRM_D);
@@ -623,7 +644,7 @@ TEST_F(Hrm, modifier_chord_two_hrm_keys) {
 TEST_F(Hrm, hrm_h_with_thumb_no_stuck_state) {
     TestDriver driver;
     InSequence s;
-    auto thumb_l      = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto thumb_l      = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
     auto hrm_h        = KeymapKey(0, 0, 1, HRM_H);
     auto layer_1_h    = KeymapKey(1, 0, 1, HRM_H);
     set_keymap({thumb_l, hrm_h, layer_1_h});
@@ -688,7 +709,7 @@ TEST_F(Hrm, release_by_position_cross_layer) {
     InSequence s;
     auto hrm_a        = KeymapKey(0, 1, 0, HRM_A);
     auto layer_1_key  = KeymapKey(1, 1, 0, KC_1);
-    auto thumb_l      = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto thumb_l      = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
     auto kc_c         = KeymapKey(0, 5, 0, KC_C);
     auto layer_1_c    = KeymapKey(1, 5, 0, KC_C);
     set_keymap({hrm_a, layer_1_key, thumb_l, kc_c, layer_1_c});
@@ -862,25 +883,25 @@ TEST_F(Hrm, fix_bug_a_fast_roll_hrm_scln_to_space) {
 }
 
 // ----------------------------------------------------------------------------
-// Test 14: Bug A Fix — Fast Roll HRM_D Into Quick Tap Enter
+// Test 14: Bug A Fix — Fast Roll HRM_D Into Quick Tap Backspace (Thumb 1)
 // ----------------------------------------------------------------------------
-// Scenario: Fast rolling left home-row HRM_D into a quick tap of LT(1, KC_ENTER)
-//           where Enter releases before HRM_D releases.
+// Scenario: Fast rolling left home-row HRM_D into a quick tap of LT(1, KC_BSPC)
+//           where Backspace releases before HRM_D releases.
 // Sequence:
 //   1. Press HRM_D (t=0ms) -> PENDING.
-//   2. Press LT(1, KC_ENTER) (t=30ms) -> buffered by QMK tapping.
-//   3. Release LT(1, KC_ENTER) (t=60ms) -> tap (tap.count == 1); flushes KC_D then KC_ENTER.
+//   2. Press LT(1, KC_BSPC) (t=30ms) -> buffered by QMK tapping.
+//   3. Release LT(1, KC_BSPC) (t=60ms) -> tap (tap.count == 1); flushes KC_D then KC_BSPC.
 //   4. Release HRM_D (t=80ms) -> already SETTLED_TAP, ignored.
 // Expected HID Reports:
-//   - On Enter release: [KC_D], empty report, [KC_ENTER], empty report.
-//   - NEVER [KC_LEFT_GUI, KC_ENTER]!
+//   - On Backspace release: [KC_D], empty report, [KC_BSPC], empty report.
+//   - NEVER [KC_LEFT_GUI, KC_BSPC]!
 // Rationale:
-//   Prevents rolling a left-hand HRM letter into Enter from firing Cmd+Enter.
-TEST_F(Hrm, fix_bug_a_fast_roll_hrm_d_to_enter) {
+//   Prevents rolling a left-hand HRM letter into left-thumb Backspace from firing Cmd+Bspc.
+TEST_F(Hrm, fix_bug_a_fast_roll_hrm_d_to_bspc) {
     TestDriver driver;
     InSequence s;
     auto hrm_d   = KeymapKey(0, 3, 0, HRM_D);
-    auto thumb_l = KeymapKey(0, 4, 0, LT(1, KC_ENTER));
+    auto thumb_l = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
     set_keymap({hrm_d, thumb_l});
 
     EXPECT_NO_REPORT(driver);
@@ -899,7 +920,7 @@ TEST_F(Hrm, fix_bug_a_fast_roll_hrm_d_to_enter) {
 
     EXPECT_REPORT(driver, (KC_D));
     EXPECT_EMPTY_REPORT(driver);
-    EXPECT_REPORT(driver, (KC_ENTER));
+    EXPECT_REPORT(driver, (KC_BSPC));
     EXPECT_EMPTY_REPORT(driver);
     thumb_l.release();
     run_one_scan_loop();
@@ -1307,3 +1328,673 @@ TEST_F(Hrm, fix_bug_c_quick_tap_then_hold_enters_layer_2) {
 
 
 
+// ============================================================================
+// 5-Layer Ergonomic Layout & QMK Typing-Feel Tests (Tests 21-32)
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Test 21: Layer 4 Mod-Alpha — Cmd + Opt + A (Opposite-Hand Letter Resolution)
+// ----------------------------------------------------------------------------
+// Scenario: Both primary thumbs held -> Layer 4 (Mod-Alpha). User holds Right
+//           HRM_K (Cmd) + Right HRM_L (Opt) and presses Left HRM_A.
+// Expected HID Reports:
+//   - Right HRM_K press: [KC_LEFT_GUI]
+//   - Right HRM_L press: [KC_LEFT_GUI, KC_LEFT_ALT]
+//   - Left HRM_A press:  [KC_LEFT_GUI, KC_LEFT_ALT, KC_A] (NEVER KC_LEFT_CTRL!)
+//   - Left HRM_A release: [KC_LEFT_GUI, KC_LEFT_ALT]
+//   - Right HRM_L/K release: [KC_LEFT_GUI], then empty report.
+TEST_F(Hrm, layer4_cmd_opt_a) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l   = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r   = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto l1_thumb_r = KeymapKey(1, 4, 1, HRM_THUMB_2_ALT_KEYCODE);
+    auto l2_thumb_l = KeymapKey(2, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_l = KeymapKey(4, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_r = KeymapKey(4, 4, 1, KC_TRANSPARENT);
+
+    auto hrm_a     = KeymapKey(0, 1, 0, HRM_A);
+    auto l4_hrm_a  = KeymapKey(4, 1, 0, HRM_A);
+    auto hrm_k     = KeymapKey(0, 2, 1, HRM_K);
+    auto l4_hrm_k  = KeymapKey(4, 2, 1, HRM_K);
+    auto hrm_l     = KeymapKey(0, 3, 1, HRM_L);
+    auto l4_hrm_l  = KeymapKey(4, 3, 1, HRM_L);
+    set_keymap({thumb_l, thumb_r, l1_thumb_r, l2_thumb_l, l4_thumb_l, l4_thumb_r,
+                hrm_a, l4_hrm_a, hrm_k, l4_hrm_k, hrm_l, l4_hrm_l});
+
+    // Enter Layer 4 via Right Thumb -> Left Thumb
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EQ(get_highest_layer(layer_state), 4);
+
+    // Hold Right Cmd (HRM_K) + Right Opt (HRM_L)
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    hrm_k.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_ALT));
+    hrm_l.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Press Left HRM_A -> opposite-hand resolution sends KC_A immediately (NEVER Ctrl!)
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_ALT, KC_A));
+    hrm_a.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_ALT));
+    hrm_a.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    hrm_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_k.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EQ(get_highest_layer(layer_state), 0);
+}
+
+// ----------------------------------------------------------------------------
+// Test 22: Layer 4 Mod-Alpha — Cmd + Ctrl + J (Regular Key & Opposite-Hand HRM)
+// ----------------------------------------------------------------------------
+// Scenario: On Layer 4, Left HRM_D (Cmd) + Left HRM_A (Ctrl) held, then press
+//           Right KC_Y (Colemak 'J') and Right HRM_J (Colemak 'N').
+// Expected HID Reports:
+//   - KC_Y sends [KC_LEFT_GUI, KC_LEFT_CTRL, KC_Y]
+//   - HRM_J sends [KC_LEFT_GUI, KC_LEFT_CTRL, KC_J] (opposite hand -> letter, NOT Shift!)
+TEST_F(Hrm, layer4_cmd_ctrl_j) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l    = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r    = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto l2_thumb_l = KeymapKey(2, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_l = KeymapKey(4, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_r = KeymapKey(4, 4, 1, KC_TRANSPARENT);
+
+    auto hrm_a    = KeymapKey(0, 1, 0, HRM_A);
+    auto l4_hrm_a = KeymapKey(4, 1, 0, HRM_A);
+    auto hrm_d    = KeymapKey(0, 3, 0, HRM_D);
+    auto l4_hrm_d = KeymapKey(4, 3, 0, HRM_D);
+    auto kc_y     = KeymapKey(0, 0, 1, KC_Y);
+    auto l4_kc_y  = KeymapKey(4, 0, 1, KC_Y);
+    auto hrm_j    = KeymapKey(0, 1, 1, HRM_J);
+    auto l4_hrm_j = KeymapKey(4, 1, 1, HRM_J);
+    set_keymap({thumb_l, thumb_r, l2_thumb_l, l4_thumb_l, l4_thumb_r,
+                hrm_a, l4_hrm_a, hrm_d, l4_hrm_d, kc_y, l4_kc_y, hrm_j, l4_hrm_j});
+
+    // Enter Layer 4
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 4);
+
+    // Hold Left Cmd (HRM_D) + Left Ctrl (HRM_A)
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    hrm_d.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_CTRL));
+    hrm_a.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Tap Right KC_Y (Colemak 'J')
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_CTRL, KC_Y));
+    kc_y.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_CTRL));
+    kc_y.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Tap Right HRM_J (Colemak 'N') -> opposite-hand resolution sends KC_J (NOT Shift!)
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_CTRL, KC_J));
+    hrm_j.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_LEFT_CTRL));
+    hrm_j.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Release mods and thumbs
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    hrm_a.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_d.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 0);
+}
+
+// ----------------------------------------------------------------------------
+// Test 23: Layer 4 Activation — Right Thumb First Then Left Thumb
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, layer4_right_thumb_first) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l    = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r    = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto l2_thumb_l = KeymapKey(2, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_l = KeymapKey(4, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_r = KeymapKey(4, 4, 1, KC_TRANSPARENT);
+    set_keymap({thumb_l, thumb_r, l2_thumb_l, l4_thumb_l, l4_thumb_r});
+
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    EXPECT_EQ(get_highest_layer(layer_state), 2);
+    EXPECT_TRUE(thumb_2_pressed);
+
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    EXPECT_EQ(get_highest_layer(layer_state), 4);
+    EXPECT_TRUE(thumb_1_pressed);
+    EXPECT_TRUE(thumb_2_pressed);
+
+    thumb_r.release();
+    run_one_scan_loop();
+    EXPECT_EQ(get_highest_layer(layer_state), 1);
+    EXPECT_FALSE(thumb_2_pressed);
+    EXPECT_TRUE(thumb_1_pressed);
+
+    thumb_l.release();
+    run_one_scan_loop();
+    EXPECT_EQ(get_highest_layer(layer_state), 0);
+    EXPECT_FALSE(thumb_1_pressed);
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 24: Layer 4 Activation — Left Thumb First Then LT(2, KC_0) (Symmetric!)
+// ----------------------------------------------------------------------------
+// Scenario: User holds Left Thumb (Layer 1), then holds Layer 1's Right Thumb
+//           LT(2, KC_0) (150ms tapping term). Layer 2 activates alongside Layer 1,
+//           triggering update_tri_layer_state(1, 2, 4) -> Layer 4!
+TEST_F(Hrm, layer4_left_thumb_first_via_lt2_zero) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l    = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r    = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto l1_thumb_r = KeymapKey(1, 4, 1, HRM_THUMB_2_ALT_KEYCODE);
+    auto l4_thumb_l = KeymapKey(4, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_r = KeymapKey(4, 4, 1, KC_TRANSPARENT);
+    set_keymap({thumb_l, thumb_r, l1_thumb_r, l4_thumb_l, l4_thumb_r});
+
+    EXPECT_NO_REPORT(driver);
+    // 1. Hold Left Thumb past TAPPING_TERM -> Layer 1
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    EXPECT_EQ(get_highest_layer(layer_state), 1);
+    EXPECT_TRUE(thumb_1_pressed);
+
+    // 2. Press & hold Layer 1 Right Thumb (LT(2, KC_0)) past its 150ms tapping term -> Layer 4!
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(150);
+    EXPECT_EQ(get_highest_layer(layer_state), 4);
+    EXPECT_TRUE(thumb_1_pressed);
+    EXPECT_TRUE(thumb_2_pressed);
+
+    // 3. Release Right Thumb -> drops cleanly back to Layer 1 (NO '0' emitted!)
+    thumb_r.release();
+    run_one_scan_loop();
+    EXPECT_EQ(get_highest_layer(layer_state), 1);
+    EXPECT_FALSE(thumb_2_pressed);
+
+    // 4. Release Left Thumb -> returns to Layer 0
+    thumb_l.release();
+    run_one_scan_loop();
+    EXPECT_EQ(get_highest_layer(layer_state), 0);
+    EXPECT_FALSE(thumb_1_pressed);
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 25: Layer 1 LT(2, KC_0) Fast Roll Into KC_7 Does Not Misfire Into Layer 4
+// ----------------------------------------------------------------------------
+// Scenario: While on Layer 1, user rolls '0' (LT(2, KC_0)) rapidly into '7' (KC_7)
+//           within 150ms (0 down -> 7 down -> 7 up -> 0 up). Because
+//           get_permissive_hold(LT(2, KC_0)) == false, LT(2, KC_0) resolves as TAP '0'
+//           and never activates Layer 2 / Layer 4!
+TEST_F(Hrm, layer1_zero_fast_roll_no_misfire) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l    = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r    = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto l1_thumb_r = KeymapKey(1, 4, 1, HRM_THUMB_2_ALT_KEYCODE);
+    auto kc_u       = KeymapKey(0, 2, 1, KC_U);
+    auto l1_kc_7    = KeymapKey(1, 2, 1, KC_7);
+    auto l4_kc_u    = KeymapKey(4, 2, 1, KC_U);
+    set_keymap({thumb_l, thumb_r, l1_thumb_r, kc_u, l1_kc_7, l4_kc_u});
+
+    // Enter Layer 1
+    EXPECT_NO_REPORT(driver);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 1);
+
+    // Roll LT(2, KC_0) -> KC_7 (nested release: 7 releases before 0, total 90ms < 150ms)
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(30);
+    kc_u.press();
+    run_one_scan_loop();
+    idle_for(30);
+    kc_u.release();
+    run_one_scan_loop();
+    idle_for(30);
+    VERIFY_AND_CLEAR(driver);
+
+    // Releasing LT(2, KC_0) resolves it as TAP KC_0, then flushes buffered KC_7 (NEVER Layer 4 KC_U!)
+    EXPECT_REPORT(driver, (KC_0));
+    EXPECT_REPORT(driver, (KC_0, KC_7));
+    EXPECT_REPORT(driver, (KC_0));
+    EXPECT_EMPTY_REPORT(driver);
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EQ(get_highest_layer(layer_state), 1);
+    EXPECT_FALSE(thumb_2_pressed);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 26: Layer 1 Cmd + 0 Shortcut via HRM_D + Tap LT(2, KC_0)
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, layer1_cmd_zero_shortcut) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l    = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r    = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto l1_thumb_r = KeymapKey(1, 4, 1, HRM_THUMB_2_ALT_KEYCODE);
+    auto hrm_d      = KeymapKey(0, 3, 0, HRM_D);
+    auto l1_hrm_d   = KeymapKey(1, 3, 0, HRM_D);
+    set_keymap({thumb_l, thumb_r, l1_thumb_r, hrm_d, l1_hrm_d});
+
+    // Enter Layer 1
+    EXPECT_NO_REPORT(driver);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    // Hold Left HRM_D -> Cmd immediately
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    hrm_d.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Quick tap Right Thumb LT(2, KC_0) -> Cmd + 0!
+    EXPECT_REPORT(driver, (KC_LEFT_GUI, KC_0));
+    EXPECT_REPORT(driver, (KC_LEFT_GUI));
+    tap_key(thumb_r, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    // Release HRM_D and Left Thumb
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_d.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 27: AS_TOGG Disables Auto Shift for HRM Keys Too (A R S T N E I O)
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, autoshift_off_disables_hrm_autoshift) {
+    TestDriver driver;
+    InSequence s;
+    auto as_togg = KeymapKey(0, 6, 1, AS_TOGG);
+    auto hrm_a   = KeymapKey(0, 1, 0, HRM_A);
+    set_keymap({as_togg, hrm_a});
+
+    // Toggle Auto Shift OFF
+    EXPECT_NO_REPORT(driver);
+    tap_key(as_togg, 40);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_FALSE(get_autoshift_state());
+
+    // Hold HRM_A well past AUTO_SHIFT_TIMEOUT (180ms) -> must NOT fire Shift+A!
+    EXPECT_NO_REPORT(driver);
+    hrm_a.press();
+    run_one_scan_loop();
+    idle_for(AUTO_SHIFT_TIMEOUT + 60);
+    VERIFY_AND_CLEAR(driver);
+
+    // Release HRM_A -> sends lowercase 'a'
+    EXPECT_REPORT(driver, (KC_A));
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_a.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // Toggle Auto Shift back ON -> holding HRM_A 180ms fires Shift+A again
+    EXPECT_NO_REPORT(driver);
+    tap_key(as_togg, 40);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_TRUE(get_autoshift_state());
+
+    EXPECT_NO_REPORT(driver);
+    hrm_a.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT, KC_A));
+    idle_for(AUTO_SHIFT_TIMEOUT);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_a.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 28: OSM(MOD_LSFT) With HRM Key and With MT(MOD_LGUI, KC_ENTER) (Shift+Enter)
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, osm_shift_with_hrm_and_enter) {
+    TestDriver driver;
+    InSequence s;
+    auto osm_sft   = KeymapKey(0, 5, 1, OSM(MOD_LSFT));
+    auto hrm_a     = KeymapKey(0, 1, 0, HRM_A);
+    auto cmd_enter = KeymapKey(0, 5, 0, MT(MOD_LGUI, KC_ENTER));
+    set_keymap({osm_sft, hrm_a, cmd_enter});
+
+    // 1. Tap OSM(MOD_LSFT) -> press HRM_A -> immediate Shift+A, clears OSM
+    EXPECT_NO_REPORT(driver);
+    tap_key(osm_sft, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT, KC_A));
+    hrm_a.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_a.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Tap OSM(MOD_LSFT) -> tap MT(MOD_LGUI, KC_ENTER) -> Shift+Enter!
+    EXPECT_NO_REPORT(driver);
+    tap_key(osm_sft, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_SHIFT, KC_ENTER));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(cmd_enter, 40);
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 29: Repeat Key Repeats HRM Letter Immediately and Ignores HRM Modifier Holds
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, repeat_key_repeats_hrm_letter_not_modifier) {
+    TestDriver driver;
+    InSequence s;
+    auto hrm_k        = KeymapKey(0, 2, 1, HRM_K);
+    auto qk_rep       = KeymapKey(0, 6, 1, QK_REP);
+    auto thumb_r      = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto hrm_scln     = KeymapKey(0, 1, 1, HRM_SCLN);
+    auto layer_2_scln = KeymapKey(2, 1, 1, HRM_SCLN);
+    set_keymap({hrm_k, qk_rep, thumb_r, hrm_scln, layer_2_scln});
+
+    // 1. Tap HRM_K -> sends 'k' and remembers HRM_K as last key
+    EXPECT_REPORT(driver, (KC_K));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(hrm_k, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Tap QK_REP -> repeats KC_K immediately on press, unregisters on release
+    EXPECT_REPORT(driver, (KC_K));
+    qk_rep.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EMPTY_REPORT(driver);
+    qk_rep.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 3. Hold Right Thumb (Layer 2) -> press & release HRM_SCLN (Ctrl modifier)
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    hrm_scln.press();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_EMPTY_REPORT(driver);
+    hrm_scln.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 4. Tap QK_REP -> must STILL repeat KC_K (HRM_SCLN modifier hold was NOT remembered!)
+    EXPECT_REPORT(driver, (KC_K));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(qk_rep, 40);
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 30: QUICK_TAP_TERM_PER_KEY — Backspace Tap-Hold Repeats, Space Enters Layer 2
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, quick_tap_bspc_repeat_vs_space_layer) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    set_keymap({thumb_l, thumb_r});
+
+    // 1. Tap LT(1, KC_BSPC), wait 40ms (< 150ms), press & hold -> repeats KC_BSPC on Layer 0!
+    EXPECT_REPORT(driver, (KC_BSPC));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(thumb_l, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_NO_REPORT(driver);
+    idle_for(40);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_BSPC));
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 0);
+
+    EXPECT_EMPTY_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. Tap LT(2, KC_SPACE), wait 40ms, press & hold -> enters Layer 2 (NO Space repeat!)
+    EXPECT_REPORT(driver, (KC_SPACE));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(thumb_r, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_NO_REPORT(driver);
+    idle_for(40);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 2);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 0);
+}
+
+// ----------------------------------------------------------------------------
+// Test 31: Inner-Thumb Backspace on Layer 1 (Right Inner) & Layer 2 (Left Inner)
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, layer1_and_layer2_bspc_on_inner_thumb) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l        = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r        = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto inner_l        = KeymapKey(0, 6, 0, KC_LEFT_CTRL);
+    auto l2_inner_l     = KeymapKey(2, 6, 0, KC_BSPC);
+    auto inner_r        = KeymapKey(0, 6, 1, KC_LEFT_ALT);
+    auto l1_inner_r     = KeymapKey(1, 6, 1, KC_BSPC);
+    set_keymap({thumb_l, thumb_r, inner_l, l2_inner_l, inner_r, l1_inner_r});
+
+    // 1. On Layer 1, right inner thumb sends KC_BSPC without leaving Layer 1
+    EXPECT_NO_REPORT(driver);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_BSPC));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(inner_r, 40);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 1);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+
+    // 2. On Layer 2, left inner thumb sends KC_BSPC without leaving Layer 2
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_REPORT(driver, (KC_BSPC));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(inner_l, 40);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 2);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}
+
+// ----------------------------------------------------------------------------
+// Test 32: Layer 4 Inner Thumbs Are Explicit Modifiers (LCtrl / LAlt, Not BSPC)
+// ----------------------------------------------------------------------------
+TEST_F(Hrm, layer4_thumb_keys_explicit) {
+    TestDriver driver;
+    InSequence s;
+    auto thumb_l    = KeymapKey(0, 4, 0, HRM_THUMB_1_KEYCODE);
+    auto thumb_r    = KeymapKey(0, 4, 1, HRM_THUMB_2_KEYCODE);
+    auto l2_thumb_l = KeymapKey(2, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_l = KeymapKey(4, 4, 0, KC_TRANSPARENT);
+    auto l4_thumb_r = KeymapKey(4, 4, 1, KC_TRANSPARENT);
+
+    auto inner_l    = KeymapKey(0, 6, 0, KC_LEFT_CTRL);
+    auto l2_inner_l = KeymapKey(2, 6, 0, KC_BSPC);
+    auto l4_inner_l = KeymapKey(4, 6, 0, KC_LEFT_CTRL);
+
+    auto inner_r    = KeymapKey(0, 6, 1, KC_LEFT_ALT);
+    auto l1_inner_r = KeymapKey(1, 6, 1, KC_BSPC);
+    auto l4_inner_r = KeymapKey(4, 6, 1, KC_LEFT_ALT);
+    set_keymap({thumb_l, thumb_r, l2_thumb_l, l4_thumb_l, l4_thumb_r,
+                inner_l, l2_inner_l, l4_inner_l, inner_r, l1_inner_r, l4_inner_r});
+
+    // Enter Layer 4
+    EXPECT_NO_REPORT(driver);
+    thumb_r.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    thumb_l.press();
+    run_one_scan_loop();
+    idle_for(TAPPING_TERM);
+    VERIFY_AND_CLEAR(driver);
+    EXPECT_EQ(get_highest_layer(layer_state), 4);
+
+    // Left inner thumb -> KC_LEFT_CTRL (NOT Layer 2 KC_BSPC)
+    EXPECT_REPORT(driver, (KC_LEFT_CTRL));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(inner_l, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    // Right inner thumb -> KC_LEFT_ALT (NOT Layer 1 KC_BSPC)
+    EXPECT_REPORT(driver, (KC_LEFT_ALT));
+    EXPECT_EMPTY_REPORT(driver);
+    tap_key(inner_r, 40);
+    VERIFY_AND_CLEAR(driver);
+
+    EXPECT_NO_REPORT(driver);
+    thumb_l.release();
+    run_one_scan_loop();
+    thumb_r.release();
+    run_one_scan_loop();
+    VERIFY_AND_CLEAR(driver);
+}

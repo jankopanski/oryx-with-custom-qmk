@@ -10,15 +10,15 @@
 #endif
 
 enum hrm_custom_keycodes {
-    HRM_A = HRM_KEYCODE_BASE, // Home-row mod: A (Ctrl on Layer 1)
-    HRM_S,                    // Home-row mod: S (Alt on Layer 1)
-    HRM_D,                    // Home-row mod: D (Cmd on Layer 1)
-    HRM_F,                    // Home-row mod: F (Shift on Layer 1)
-    HRM_H,                    // Home-row mod: H (plain on Layer 1)
-    HRM_J,                    // Home-row mod: J (Shift on Layer 2)
-    HRM_K,                    // Home-row mod: K (Cmd on Layer 2)
-    HRM_L,                    // Home-row mod: L (Alt on Layer 2)
-    HRM_SCLN,                 // Home-row mod: ; (Ctrl on Layer 2)
+    HRM_A = HRM_KEYCODE_BASE, // Home-row mod: A (Ctrl on Layer 1/4)
+    HRM_S,                    // Home-row mod: S (Alt on Layer 1/4)
+    HRM_D,                    // Home-row mod: D (Cmd on Layer 1/4)
+    HRM_F,                    // Home-row mod: F (Shift on Layer 1/4)
+    HRM_H,                    // Home-row mod: H (no modifier)
+    HRM_J,                    // Home-row mod: J (Shift on Layer 2/4)
+    HRM_K,                    // Home-row mod: K (Cmd on Layer 2/4)
+    HRM_L,                    // Home-row mod: L (Alt on Layer 2/4)
+    HRM_SCLN,                 // Home-row mod: ; (Ctrl on Layer 2/4)
     HRM_SAFE_RANGE,           // Base for subsequent keycodes in keymap.c
 };
 
@@ -31,18 +31,20 @@ typedef enum {
     HRM_STATE_PENDING,        // Pressed, waiting for decision
     HRM_STATE_SETTLED_TAP,    // Flushed early due to roll/regular key press; release ignored
     HRM_STATE_TAP_FIRED,      // Auto-shift fired, shifted letter held
-    HRM_STATE_DIRECT_KEY,     // Registered immediately on press (active modifier bypass)
+    HRM_STATE_DIRECT_KEY,     // Registered immediately on press (active mod / opposite-hand bypass)
     HRM_STATE_MODIFIER_ACTIVE // Modifier mode active
 } hrm_state_t;
 
 // Exact thumb layer-tap keycodes that control HRM modifier activation
-#define HRM_THUMB_1_KEYCODE LT(1, KC_ENTER)
-#define HRM_THUMB_2_KEYCODE LT(2, KC_SPACE)
+#define HRM_THUMB_1_KEYCODE     LT(1, KC_BSPC)
+#define HRM_THUMB_2_KEYCODE     LT(2, KC_SPACE)
+#define HRM_THUMB_2_ALT_KEYCODE LT(2, KC_0)
 
 typedef struct {
     uint16_t custom_keycode; // Custom keycode (HRM_A, HRM_S, etc.)
     uint16_t letter_keycode; // Letter keycode (KC_A, KC_S, etc.)
     uint16_t modifier;       // Modifier keycode (KC_LCTL, KC_LALT, etc.) - 0 if none
+    bool is_left;            // True for left-hand HRM keys (A, S, D, F), false for right-hand
     uint32_t press_time;     // When key was pressed
     hrm_state_t state;       // Current state
     deferred_token token;    // Deferred execution token for auto-shift timer
@@ -58,6 +60,7 @@ extern bool thumb_2_pressed;
 
 hrm_key_state_t *hrm_get_state(uint16_t keycode);
 hrm_key_state_t *hrm_get_state_by_position(uint8_t row, uint8_t col);
+bool hrm_opposite_hand_mod_active(bool is_left);
 uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg);
 void hrm_handle_press(hrm_key_state_t *state, uint8_t row, uint8_t col);
 void hrm_handle_release(hrm_key_state_t *state);
