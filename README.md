@@ -3,6 +3,10 @@
 Custom 5-layer ZSA Moonlander firmware in [`AWDDG/`](./AWDDG/) built for **macOS virtual Colemak**, with a standalone thumb-gated Home-Row Mod engine (`hrm.h`/`hrm.c`), mirrored Number/Symbol layers, a symmetric Mod-Alpha Tri-Layer (Layer 4), macOS Navigation (Layer 3), One-Shot Shift, Auto Shift toggle, Repeat Key, and a 32-test QMK unit test suite.
 
 > **Source of truth:** `AWDDG/` in this git repository is the source of truth for the layout. Do **not** edit the layout in Oryx and run the Oryx merge workflow — build locally and flash with Keymapp instead.
+>
+> **Hardware & OS note:**
+> - **Board revision:** ZSA Moonlander **Rev A** (`zsa/moonlander/reva`, `stm32-dfu` bootloader, PID `0xDF11` / `57105`). Do **not** build `zsa/moonlander/revb` (it uses a different bootloader PID `0x2003` and Keymapp will reject it with `[DFU] no valid firmware data found for pid 57105`).
+> - **Host layout:** macOS **virtual Colemak** (firmware sends standard QWERTY keycodes; macOS maps them to Colemak).
 
 ## Documentation
 
