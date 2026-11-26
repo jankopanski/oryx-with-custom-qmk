@@ -30,9 +30,14 @@ typedef enum {
     HRM_STATE_IDLE,           // Key not pressed
     HRM_STATE_PENDING,        // Pressed, waiting for decision
     HRM_STATE_SETTLED_TAP,    // Flushed early due to roll/regular key press; release ignored
-    HRM_STATE_TAP_FIRED,      // Auto-shift fired, letter sent
+    HRM_STATE_TAP_FIRED,      // Auto-shift fired, shifted letter held
+    HRM_STATE_DIRECT_KEY,     // Registered immediately on press (active modifier bypass)
     HRM_STATE_MODIFIER_ACTIVE // Modifier mode active
 } hrm_state_t;
+
+// Exact thumb layer-tap keycodes that control HRM modifier activation
+#define HRM_THUMB_1_KEYCODE LT(1, KC_ENTER)
+#define HRM_THUMB_2_KEYCODE LT(2, KC_SPACE)
 
 typedef struct {
     uint16_t custom_keycode; // Custom keycode (HRM_A, HRM_S, etc.)

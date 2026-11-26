@@ -49,8 +49,8 @@ uint32_t hrm_autoshift_callback(uint32_t trigger_time, void *cb_arg) {
       register_code(state->modifier);
       state->state = HRM_STATE_MODIFIER_ACTIVE;
     } else {
-      // Hold shifted version of the key to support repeat
-      register_code(KC_LSFT);
+      // Hold shifted version of the key via weak Shift so physical Shift is never clobbered
+      add_weak_mods(MOD_BIT(KC_LSFT));
       register_code(state->letter_keycode);
 
       // Transition to tap fired state
@@ -71,6 +71,24 @@ void hrm_handle_press(hrm_key_state_t *state, uint8_t row, uint8_t col) {
        get_highest_layer(layer_state) == 2) && state->modifier != 0) {
     register_code(state->modifier);
     state->state = HRM_STATE_MODIFIER_ACTIVE;
+    state->row = row;
+    state->col = col;
+    state->press_time = timer_read32();
+    return;
+  }
+
+  // Active modifier bypass (Cmd/Tab, physical Shift/Ctrl/Alt, OSM, Option A cross-hand mods):
+  // Bypass HRM delay and Auto Shift so shortcuts register immediately on press.
+  uint8_t active_mods = get_mods();
+#ifndef NO_ACTION_ONESHOT
+  active_mods |= get_oneshot_mods();
+#endif
+  if (active_mods != 0) {
+    register_code(state->letter_keycode);
+#ifndef NO_ACTION_ONESHOT
+    clear_oneshot_mods();
+#endif
+    state->state = HRM_STATE_DIRECT_KEY;
     state->row = row;
     state->col = col;
     state->press_time = timer_read32();
@@ -119,9 +137,14 @@ void hrm_handle_release(hrm_key_state_t *state) {
     break;
 
   case HRM_STATE_TAP_FIRED:
-    // Unregister codes for auto-shift
+    // Unregister codes for auto-shift (weak shift preserves any physical Shift)
+    del_weak_mods(MOD_BIT(KC_LSFT));
     unregister_code(state->letter_keycode);
-    unregister_code(KC_LSFT);
+    break;
+
+  case HRM_STATE_DIRECT_KEY:
+    // Unregister directly-registered letter (active-modifier bypass)
+    unregister_code(state->letter_keycode);
     break;
 
   case HRM_STATE_MODIFIER_ACTIVE:
@@ -182,25 +205,30 @@ void hrm_flush_pending_keys(void) {
 
 // Central processing logic for HRM
 bool hrm_process_record(uint16_t keycode, keyrecord_t *record) {
-  // Track physical press state of thumb keys
-  if (keycode >= QK_LAYER_TAP && keycode <= QK_LAYER_TAP_MAX) {
-    uint8_t layer = QK_LAYER_TAP_GET_LAYER(keycode);
-    if (layer == 1) {
-      thumb_1_pressed = record->event.pressed;
-    } else if (layer == 2) {
-      thumb_2_pressed = record->event.pressed;
+  // Track only the actual thumb layer-tap keycodes, and distinguish hold vs tap
+  if (keycode == HRM_THUMB_1_KEYCODE || keycode == HRM_THUMB_2_KEYCODE) {
+    if (record->tap.count == 0) {
+      // Actual hold: update thumb tracking and activate pending HRM modifiers
+      if (keycode == HRM_THUMB_1_KEYCODE) {
+        thumb_1_pressed = record->event.pressed;
+      } else {
+        thumb_2_pressed = record->event.pressed;
+      }
+      if (record->event.pressed) {
+        hrm_activate_modifiers();
+      }
+      return true;
+    } else {
+      // Thumb key was tapped (Space / Enter): do NOT activate modifiers;
+      // flush pending HRM keys on press so fast rolls output letter + Space/Enter.
+      if (record->event.pressed) {
+        hrm_flush_pending_keys();
+      }
+      return true;
     }
   }
 
   if (record->event.pressed) {
-    // Force activation on thumb key press to support Home-Row First with LT keys
-    if (keycode >= QK_LAYER_TAP && keycode <= QK_LAYER_TAP_MAX) {
-      uint8_t layer = QK_LAYER_TAP_GET_LAYER(keycode);
-      if (layer == 1 || layer == 2) {
-        hrm_activate_modifiers();
-      }
-    }
-
     // Check if key is pressed while already on Layer 1 or 2
     uint8_t current_layer = get_highest_layer(layer_state);
     if (current_layer == 1 || current_layer == 2) {
@@ -212,6 +240,11 @@ bool hrm_process_record(uint16_t keycode, keyrecord_t *record) {
   if (record->event.pressed) {
     hrm_key_state_t *hrm_state = hrm_get_state(keycode);
     if (hrm_state != NULL) {
+#ifdef AUTO_SHIFT_ENABLE
+      // Flush any in-progress QMK Auto Shift regular key before handling HRM press
+      // (since we return false below, QMK's process_auto_shift will not see this press)
+      process_auto_shift(KC_NO, record);
+#endif
       hrm_handle_press(hrm_state, record->event.key.row, record->event.key.col);
       return false; // Skip further processing for HRM keys
     }
