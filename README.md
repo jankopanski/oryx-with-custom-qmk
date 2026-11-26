@@ -16,13 +16,13 @@ Custom 5-layer ZSA Moonlander firmware in [`AWDDG/`](./AWDDG/) built for **macOS
    ```bash
    ./test.sh
    ```
-2. **Build the Moonlander firmware binary:**
+2. **Build the Moonlander firmware binary (Rev A):**
    ```bash
-   make -C ../qmk_firmware zsa/moonlander/revb:AWDDG
+   make -C ../qmk_firmware zsa/moonlander/reva:AWDDG
    ```
-   Output binary: `../qmk_firmware/zsa_moonlander_revb_AWDDG.bin`
+   Output binary: `../qmk_firmware/zsa_moonlander_reva_AWDDG.bin`
 3. **Flash to your Moonlander:**
-   Open [Keymapp](https://www.zsa.io/flash#flash-keymap) and flash `zsa_moonlander_revb_AWDDG.bin`.
+   Open [Keymapp](https://www.zsa.io/flash#flash-keymap) and flash `zsa_moonlander_reva_AWDDG.bin`.
 
 ---
 
